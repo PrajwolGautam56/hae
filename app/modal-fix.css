@@ -6,6 +6,10 @@
   overflow: hidden;
 }
 
+.modal.invoice-modal {
+  height: min(860px, calc(100dvh - 32px));
+}
+
 .modal > .modal-head { flex: 0 0 auto; }
 
 .modal > .form-grid {
@@ -43,6 +47,7 @@
     max-height: calc(100dvh - 8px);
     border-radius: 18px 18px 0 0;
   }
+  .modal.invoice-modal { height: calc(100dvh - 8px); }
   .modal > .modal-head {
     position: relative;
     top: auto;

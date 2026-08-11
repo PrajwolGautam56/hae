@@ -1051,7 +1051,10 @@ export default function Home() {
 
       {modal && !["party", "product"].includes(modal) && (
         <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
-          <section className="modal" onMouseDown={(e) => e.stopPropagation()}>
+          <section
+            className={`modal ${modal === "sale" || modal === "purchase" ? "invoice-modal" : ""}`}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             <div className="modal-head">
               <div>
                 <small>
