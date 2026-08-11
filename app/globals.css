@@ -74,6 +74,8 @@ body {
 }
 .sidebar nav {
   padding: 22px 12px;
+  overflow-y: auto;
+  min-height: 0;
 }
 .sidebar nav p {
   font-size: 9px;
@@ -1157,7 +1159,15 @@ td small {
 }
 @media (max-width: 760px) {
   .sidebar {
-    display: none;
+    display: flex;
+    width: min(290px, 86vw);
+    transform: translateX(-105%);
+    transition: transform 0.22s ease;
+    z-index: 30;
+    box-shadow: 12px 0 30px rgba(8, 18, 38, 0.25);
+  }
+  .sidebar.mobile-open {
+    transform: translateX(0);
   }
   .content {
     margin-left: 0;
@@ -1266,5 +1276,193 @@ td small {
   .modal {
     max-height: 94vh;
     overflow: auto;
+  }
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+@media (max-width: 760px) {
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    border: 0;
+    background: rgba(10, 19, 35, 0.5);
+    backdrop-filter: blur(2px);
+  }
+  .sidebar nav {
+    padding-top: 12px;
+  }
+  .sidebar nav button {
+    min-height: 44px;
+  }
+  .sidebar-foot {
+    padding-top: 6px;
+  }
+  header {
+    gap: 8px;
+  }
+  header > div:first-child {
+    min-width: 0;
+  }
+  header > div:first-child > div {
+    min-width: 0;
+  }
+  header strong {
+    max-width: 135px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fy-tools {
+    gap: 5px;
+  }
+  .page {
+    overflow: hidden;
+  }
+  .title-row {
+    gap: 10px;
+  }
+  .title-actions .year-status {
+    display: none;
+  }
+  .summary-grid,
+  .sales-stats,
+  .crm-summary,
+  .team-grid,
+  .pipeline,
+  .ledger-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .summary-grid article,
+  .sales-stats article,
+  .crm-summary article,
+  .ledger-summary article {
+    min-width: 0;
+  }
+  .summary-grid h2,
+  .crm-summary strong,
+  .ledger-summary strong {
+    font-size: 18px;
+    overflow-wrap: anywhere;
+  }
+  .quick-grid {
+    grid-template-columns: 1fr;
+  }
+  .activity {
+    display: block;
+  }
+  .chart {
+    min-width: 560px;
+  }
+  .activity.card {
+    overflow-x: auto;
+  }
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  table {
+    min-width: 720px;
+  }
+  .module-hero,
+  .crm-toolbar {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .module-hero {
+    flex-direction: column;
+  }
+  .module-hero p {
+    display: block;
+  }
+  .module-hero .primary,
+  .crm-toolbar .primary {
+    width: 100%;
+  }
+  .crm-two-col,
+  .task-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .crm-card,
+  .report-filters {
+    min-width: 0;
+  }
+  .crm-list > button {
+    grid-template-columns: 38px minmax(0, 1fr);
+  }
+  .crm-list .stage {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .detail-head,
+  .detail-actions {
+    flex-wrap: wrap;
+  }
+  .detail-head button,
+  .detail-actions > * {
+    width: 100%;
+  }
+  .report-filters {
+    grid-template-columns: 1fr;
+  }
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    width: 100%;
+    max-width: none;
+    max-height: 94dvh;
+    border-radius: 18px 18px 0 0;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  .modal-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: white;
+    margin: 18px -24px -16px;
+    padding: 12px 24px max(12px, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+  }
+  .modal-actions button {
+    flex: 1;
+    min-height: 44px;
+  }
+  .invoice-line {
+    grid-template-columns: 1fr 1fr;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 10px;
+  }
+  .invoice-line > div,
+  .invoice-line > strong {
+    grid-column: 1 / -1;
+  }
+  .invoice-line > button {
+    justify-self: end;
+  }
+}
+@media (max-width: 420px) {
+  .summary-grid,
+  .sales-stats,
+  .crm-summary,
+  .team-grid,
+  .pipeline,
+  .ledger-summary {
+    grid-template-columns: 1fr;
+  }
+  header small {
+    display: none;
+  }
+  .fy-tools > select {
+    max-width: 100px;
+  }
+  .date-pill {
+    font-size: 10px;
   }
 }

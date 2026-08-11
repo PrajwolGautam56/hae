@@ -39,7 +39,7 @@ async function snapshot(requestedFy?: string) {
   ] = await Promise.all([
     supabase
       .from("parties")
-      .select("id,name,place,opening_balance")
+      .select("id,name,place,phone,tax_no,party_type,opening_balance")
       .eq("company_id", company.id)
       .order("name"),
     supabase
@@ -157,6 +157,7 @@ export async function POST(request: Request) {
           name,
           place: String(body.place || ""),
           phone: String(body.phone || ""),
+          tax_no: String(body.taxNo || "") || null,
           party_type: String(body.partyType || "both"),
         },
         { onConflict: "company_id,name" },

@@ -134,6 +134,7 @@ const emptySaleLine = (): SaleLine => ({
 });
 
 export default function Home() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clientToday, setClientToday] = useState("");
   const [active, setActive] = useState("Overview");
   const [range, setRange] = useState("This month");
@@ -165,6 +166,7 @@ export default function Home() {
   const [entityName, setEntityName] = useState("");
   const [place, setPlace] = useState("");
   const [phone, setPhone] = useState("");
+  const [taxNo, setTaxNo] = useState("");
   const [sku, setSku] = useState("");
   const [unit, setUnit] = useState("pcs");
   const [salePrice, setSalePrice] = useState("");
@@ -278,6 +280,7 @@ export default function Home() {
         openingStock: Number(openingStock || 0),
         place,
         phone,
+        taxNo,
         partyType: "both",
       }),
     });
@@ -297,6 +300,7 @@ export default function Home() {
     setEntityName("");
     setPlace("");
     setPhone("");
+    setTaxNo("");
     setSku("");
     setSalePrice("");
     setPurchasePrice("");
@@ -356,7 +360,7 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? "mobile-open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">ह</div>
           <div>
@@ -370,7 +374,10 @@ export default function Home() {
             <button
               key={item}
               className={active === item ? "active" : ""}
-              onClick={() => setActive(item)}
+              onClick={() => {
+                setActive(item);
+                setSidebarOpen(false);
+              }}
             >
               <i>{["⌂", "↗", "↙", "⇄", "♙", "▦", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
               {item}
@@ -399,7 +406,13 @@ export default function Home() {
       <section className="content">
         <header>
           <div>
-            <button className="mobile-menu">☰</button>
+            <button
+              className="mobile-menu"
+              aria-label="Open navigation"
+              onClick={() => setSidebarOpen(true)}
+            >
+              ☰
+            </button>
             <span className="company-dot">H</span>
             <div>
               <strong>Himalayan Link Trading</strong>
@@ -967,6 +980,8 @@ export default function Home() {
                         <tr>
                           <th>PARTY</th>
                           <th>PLACE</th>
+                          <th>PHONE</th>
+                          <th>PAN</th>
                           <th>OPENING</th>
                           <th>BALANCE</th>
                         </tr>
@@ -992,6 +1007,8 @@ export default function Home() {
                               <strong>{p.name}</strong>
                             </td>
                             <td>{p.place || "—"}</td>
+                            <td>{p.phone || "—"}</td>
+                            <td>{p.tax_no || "—"}</td>
                             <td>{money(Number(p.opening_balance))}</td>
                             <td>{money(Number(p.balance))}</td>
                           </tr>
@@ -1371,6 +1388,14 @@ export default function Home() {
                       onChange={(e) => setPhone(e.target.value)}
                     />
                   </label>
+                  <label>
+                    PAN Number (optional)
+                    <input
+                      value={taxNo}
+                      onChange={(e) => setTaxNo(e.target.value)}
+                      placeholder="PAN / Tax ID"
+                    />
+                  </label>
                 </>
               ) : (
                 <>
@@ -1440,6 +1465,13 @@ export default function Home() {
         </div>
       )}
       {notice && <div className="toast">✓ {notice}</div>}
+      {sidebarOpen && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Close navigation"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
     </main>
   );
 }
