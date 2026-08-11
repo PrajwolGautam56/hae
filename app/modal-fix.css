@@ -1,0 +1,58 @@
+/* Production modal shell: fixed header/footer and a dedicated scroll body. */
+.modal {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+
+.modal > .modal-head { flex: 0 0 auto; }
+
+.modal > .form-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  align-content: start;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modal > .form-grid::-webkit-scrollbar { width: 8px; }
+.modal > .form-grid::-webkit-scrollbar-track { background: #f3f4f6; }
+.modal > .form-grid::-webkit-scrollbar-thumb {
+  background: #b8c0cc;
+  border-radius: 10px;
+  border: 2px solid #f3f4f6;
+}
+
+.modal > .balance-note { flex: 0 0 auto; margin-top: 10px; }
+.modal > .modal-actions {
+  position: relative;
+  flex: 0 0 auto;
+  bottom: auto;
+  margin: 12px 0 0;
+  padding: 14px 22px;
+  box-shadow: 0 -8px 22px rgba(16, 24, 40, 0.06);
+}
+
+@media (max-width: 760px) {
+  .modal-backdrop { align-items: end; }
+  .modal {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+    border-radius: 18px 18px 0 0;
+  }
+  .modal > .modal-head {
+    position: relative;
+    top: auto;
+    margin: 0;
+    padding: 15px 18px;
+  }
+  .modal > .form-grid { padding: 15px 18px 26px; }
+  .modal > .balance-note { margin: 8px 18px 0; }
+  .modal > .modal-actions {
+    margin: 10px 0 0;
+    padding: 11px 18px max(11px, env(safe-area-inset-bottom));
+  }
+}
