@@ -5,80 +5,6 @@ import NepaliDate from "nepali-date-converter";
 import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
 
-const seedParties = [
-  {
-    name: "Tashi Delek Traders",
-    place: "Phuentsholing",
-    balance: 1842500,
-    tone: "amber",
-    initials: "TD",
-  },
-  {
-    name: "Druk Hardware House",
-    place: "Thimphu",
-    balance: 785400,
-    tone: "blue",
-    initials: "DH",
-  },
-  {
-    name: "Norbu Enterprise",
-    place: "Paro",
-    balance: -124000,
-    tone: "green",
-    initials: "NE",
-  },
-  {
-    name: "Karma General Store",
-    place: "Gelephu",
-    balance: 346800,
-    tone: "violet",
-    initials: "KG",
-  },
-];
-
-const seedTransactions = [
-  {
-    type: "Sales Invoice",
-    party: "Tashi Delek Traders",
-    ref: "INV-2081",
-    date: "16 Jul 2026",
-    debit: 485000,
-    credit: 0,
-  },
-  {
-    type: "Payment Received",
-    party: "Druk Hardware House",
-    ref: "REC-0942 · Cash",
-    date: "16 Jul 2026",
-    debit: 0,
-    credit: 200000,
-  },
-  {
-    type: "Purchase",
-    party: "Himalayan Suppliers",
-    ref: "PUR-0718",
-    date: "15 Jul 2026",
-    debit: 0,
-    credit: 326500,
-  },
-  {
-    type: "Sales Invoice",
-    party: "Karma General Store",
-    ref: "INV-2080",
-    date: "15 Jul 2026",
-    debit: 175800,
-    credit: 0,
-  },
-  {
-    type: "Office Expense",
-    party: "Bhutan Telecom",
-    ref: "EXP-0137 · Internet",
-    date: "14 Jul 2026",
-    debit: 0,
-    credit: 4800,
-  },
-];
-
 const nav = [
   "Overview",
   "Sales",
@@ -143,13 +69,14 @@ export default function Home() {
   >(null);
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
-  const [formParty, setFormParty] = useState("Tashi Delek Traders");
-  const [parties, setParties] = useState<any[]>(seedParties);
-  const [transactions, setTransactions] = useState<any[]>(seedTransactions);
+  const [formParty, setFormParty] = useState("");
+  const [parties, setParties] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [company, setCompany] = useState<any>({ name: "Hamro Afno Enterprises" });
   const [totals, setTotals] = useState({
-    sales: 660800,
-    received: 200000,
-    receivable: 2970700,
+    sales: 0,
+    received: 0,
+    receivable: 0,
   });
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
@@ -214,6 +141,7 @@ export default function Home() {
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
     setProducts(data.products || []);
+    setCompany(data.company || { name: "Hamro Afno Enterprises" });
   }
   useEffect(() => {
     fetch("/api/accounting")
@@ -362,10 +290,10 @@ export default function Home() {
     <main className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "mobile-open" : ""}`}>
         <div className="brand">
-          <div className="brand-mark">ह</div>
+          <img className="brand-logo" src="/hamro-afno-logo.jpeg" alt="Hamro Afno Enterprises logo" />
           <div>
-            <strong>हाम्रो खाता</strong>
-            <span>TRADING & ACCOUNTS</span>
+            <strong>Hamro Afno</strong>
+            <span>ENTERPRISES</span>
           </div>
         </div>
         <nav>
@@ -413,9 +341,9 @@ export default function Home() {
             >
               ☰
             </button>
-            <span className="company-dot">H</span>
+            <img className="company-logo" src="/hamro-afno-logo.jpeg" alt="" />
             <div>
-              <strong>Himalayan Link Trading</strong>
+              <strong>{company.name}</strong>
               <small>FY {fiscalYear?.label_bs || "2083/84"} · BTN</small>
             </div>
           </div>

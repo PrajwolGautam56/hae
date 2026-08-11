@@ -13,11 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hamro Khata — Trading & Ledger Management",
+  title: "Hamro Afno Enterprises — Accounts & CRM",
   description: "Sales, purchases, inventory, payments and party ledgers in one simple accounting workspace.",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/hamro-afno-logo.jpeg",
+    shortcut: "/hamro-afno-logo.jpeg",
   },
 };
 

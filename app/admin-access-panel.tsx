@@ -1,0 +1,23 @@
+"use client";
+
+import { createClient } from "@supabase/supabase-js";
+import { useEffect, useMemo, useState } from "react";
+
+const title = (v:string) => v.charAt(0).toUpperCase()+v.slice(1);
+
+export default function AdminAccessPanel({ onNotice }: { onNotice:(x:string)=>void }) {
+  const supabase = useMemo(()=>createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!),[]);
+  const [session,setSession]=useState<any>(null); const [users,setUsers]=useState<any[]>([]); const [busy,setBusy]=useState(false);
+  const [login,setLogin]=useState({email:"prajwolgautam56@gmail.com",password:""});
+  const [form,setForm]=useState({name:"",email:"",phone:"",role:"staff"});
+  useEffect(()=>{supabase.auth.getSession().then(x=>setSession(x.data.session));const {data}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>data.subscription.unsubscribe()},[supabase]);
+  useEffect(()=>{if(session)load()},[session]);
+  async function request(body?:any){const r=await fetch("/api/admin/users",{method:body?"POST":"GET",headers:{Authorization:`Bearer ${session.access_token}`,...(body?{"Content-Type":"application/json"}:{})},body:body?JSON.stringify(body):undefined});const d=await r.json();if(!r.ok)throw new Error(d.error);return d}
+  async function load(){try{const d=await request();setUsers(d.users)}catch(e){onNotice(e instanceof Error?e.message:"Could not load users")}}
+  async function signIn(){setBusy(true);const {error}=await supabase.auth.signInWithPassword(login);setBusy(false);if(error)onNotice(error.message)}
+  async function createUser(){setBusy(true);try{await request({action:"create",...form});setForm({name:"",email:"",phone:"",role:"staff"});await load();onNotice("User created; password setup email sent") }catch(e){onNotice(e instanceof Error?e.message:"Could not create user")}finally{setBusy(false)}}
+  async function reset(email:string){setBusy(true);try{await request({action:"reset",email});onNotice(`Password reset email sent to ${email}`)}catch(e){onNotice(e instanceof Error?e.message:"Could not send reset") }finally{setBusy(false)}}
+  async function status(memberId:string,active:boolean){try{await request({action:"status",memberId,active});await load();onNotice(active?"User activated":"User deactivated")}catch(e){onNotice(e instanceof Error?e.message:"Could not update user")}}
+  if(!session)return <article className="crm-card admin-access"><div><span>ADMIN SECURITY</span><h3>Sign in to manage users</h3><p>Only a signed-in administrator can add users or reset passwords.</p></div><div className="admin-login"><input type="email" value={login.email} onChange={e=>setLogin({...login,email:e.target.value})} placeholder="Admin email"/><input type="password" value={login.password} onChange={e=>setLogin({...login,password:e.target.value})} placeholder="Password" onKeyDown={e=>e.key==="Enter"&&signIn()}/><button className="primary" disabled={busy} onClick={signIn}>{busy?"Signing in…":"Admin sign in"}</button></div></article>;
+  return <div className="admin-users"><div className="crm-toolbar"><div><h2>User access administration</h2><p>Create Admin, Manager, Accountant or Staff accounts. Passwords are set through secure email links.</p></div><button onClick={()=>supabase.auth.signOut()}>Sign out</button></div><div className="admin-user-grid"><article className="crm-card add-user-card"><h3>Add user</h3><label>Full name<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>Email<input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></label><label>Phone (optional)<input value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/></label><label>Access role<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>{["admin","manager","accountant","staff"].map(x=><option key={x} value={x}>{title(x)}</option>)}</select></label><button className="primary" disabled={busy||!form.name||!form.email} onClick={createUser}>Create & email setup link</button></article><article className="crm-card user-access-list"><h3>System users</h3>{users.map(u=><div key={u.id}><span className="member-avatar">{u.name.slice(0,2).toUpperCase()}</span><span><strong>{u.name}</strong><small>{u.email} · {title(u.role)}</small></span><em className={u.active?"active-user":"inactive-user"}>{u.active?"Active":"Inactive"}</em><button disabled={!u.auth_user_id||busy} onClick={()=>reset(u.email)}>Reset password</button><button onClick={()=>status(u.id,!u.active)}>{u.active?"Deactivate":"Activate"}</button></div>)}</article></div></div>;
+}
