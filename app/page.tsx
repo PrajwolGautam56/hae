@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import NepaliDate from "nepali-date-converter";
 import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
+import ChequeWorkspace from "./cheque-workspace";
 
 const nav = [
   "Overview",
   "Sales",
   "Purchases",
   "Payments",
+  "Cheques",
   "Parties",
   "Inventory",
   "Expenses",
@@ -21,7 +23,8 @@ const nav = [
 ];
 
 const money = (n: number) => `Nu. ${Math.abs(n).toLocaleString("en-IN")}`;
-const today = new Date().toISOString().slice(0, 10);
+const localBusinessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const today = localBusinessDate();
 const parseDate = (value: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(`${value}T12:00:00`)
@@ -80,6 +83,10 @@ export default function Home() {
   });
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
+  const [chequeNo, setChequeNo] = useState("");
+  const [chequeBank, setChequeBank] = useState("");
+  const [chequeExchangeDate, setChequeExchangeDate] = useState("");
+  const [chequeCounts, setChequeCounts] = useState({ pending: 0, dueToday: 0, overdue: 0 });
   const [particulars, setParticulars] = useState("");
   const [saving, setSaving] = useState(false);
   const [calendar, setCalendar] = useState<"BS" | "AD">("BS");
@@ -108,8 +115,16 @@ export default function Home() {
   );
 
   useEffect(() => {
-    setClientToday(new Date().toISOString().slice(0, 10));
+    setClientToday(localBusinessDate());
   }, []);
+  async function refreshChequeCounts() {
+    try {
+      const response = await fetch("/api/cheques", { cache: "no-store" });
+      const data = await response.json();
+      if (response.ok) setChequeCounts(data.counts);
+    } catch {}
+  }
+  useEffect(() => { refreshChequeCounts(); }, []);
 
   function applySnapshot(data: any) {
     setParties(
@@ -178,6 +193,10 @@ export default function Home() {
       setNotice("Please select a party or add a new party");
       return;
     }
+    if (modal === "payment" && paymentMode === "Cheque" && !chequeExchangeDate) {
+      setNotice("Please select the cheque exchange date");
+      return;
+    }
     setSaving(true);
     const response = await fetch("/api/accounting", {
       method: "POST",
@@ -194,6 +213,9 @@ export default function Home() {
         amount: Number(amount),
         particulars,
         paymentMode,
+        chequeNo,
+        chequeBank,
+        chequeExchangeDate,
         date: today,
         fiscalYearId: fiscalYear?.id,
         lines: validLines.map((l) => ({
@@ -226,6 +248,7 @@ export default function Home() {
     setModal(null);
     setAmount("");
     setPaymentMode("Cash");
+    setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
     setParticulars("");
     setSaleLines([emptySaleLine()]);
     setNewPartyName("");
@@ -238,6 +261,7 @@ export default function Home() {
     setPurchasePrice("");
     setOpeningStock("");
     setNotice(`${kind} saved in local database`);
+    refreshChequeCounts();
     window.setTimeout(() => setNotice(""), 2600);
   }
   function openSale() {
@@ -251,6 +275,7 @@ export default function Home() {
     setModal("payment");
     setFormParty(parties[0]?.name || "__new__");
     setNewPartyName(""); setAmount(""); setParticulars("");
+    setPaymentMode("Cash"); setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
     setPlace(""); setPhone(""); setTaxNo("");
   }
   function openModuleModal(kind: "purchase" | "expense" | "party" | "product") {
@@ -332,9 +357,10 @@ export default function Home() {
                 setSidebarOpen(false);
               }}
             >
-              <i>{["⌂", "↗", "↙", "⇄", "♙", "▦", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
+              <i>{["⌂", "↗", "↙", "⇄", "▣", "♙", "▦", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
               {item}
               {item === "Inventory" && lowStockCount > 0 && <b>{lowStockCount}</b>}
+              {item === "Cheques" && chequeCounts.pending > 0 && <b>{chequeCounts.pending}</b>}
             </button>
           ))}
         </nav>
@@ -448,6 +474,11 @@ export default function Home() {
             <CrmWorkspace section={active} onNotice={setNotice} />
           ) : active === "Overview" ? (
             <>
+              {(chequeCounts.dueToday > 0 || chequeCounts.overdue > 0) && (
+                <button className="cheque-alert" onClick={() => setActive("Cheques")}>
+                  <span>▣</span><div><strong>{chequeCounts.dueToday} cheques to exchange today</strong><small>{chequeCounts.overdue} overdue cheque{chequeCounts.overdue === 1 ? "" : "s"} need attention</small></div><b>View cheque register →</b>
+                </button>
+              )}
               <div className="summary-grid">
                 <article>
                   <div className="stat-head">
@@ -825,6 +856,8 @@ export default function Home() {
                 </div>
               </article>
             </section>
+          ) : active === "Cheques" ? (
+            <ChequeWorkspace onNotice={setNotice} />
           ) : active === "Reports" ? (
             <ReportsWorkspace
               parties={parties}
@@ -1255,6 +1288,14 @@ export default function Home() {
                         <option>Cheque</option>
                       </select>
                     </label>
+                  )}
+                  {modal === "payment" && paymentMode === "Cheque" && (
+                    <div className="cheque-fields full">
+                      <div><strong>Cheque details</strong><span>This receipt stays pending until marked cleared.</span></div>
+                      <label>Cheque number<input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="Optional cheque no." /></label>
+                      <label>Bank name<input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder="Optional bank" /></label>
+                      <label>Exchange / clearance date *<input type="date" value={chequeExchangeDate} onChange={(e) => setChequeExchangeDate(e.target.value)} /></label>
+                    </div>
                   )}
                 </>
               )}

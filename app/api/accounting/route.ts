@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 export const dynamic = "force-dynamic";
 
+const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+
 async function snapshot(requestedFy?: string) {
   const supabase = getSupabaseAdmin();
   if (!supabase) throw new Error("Supabase server configuration is missing");
@@ -15,7 +17,7 @@ async function snapshot(requestedFy?: string) {
   const company = companies[0];
   const { error: fiscalEnsureError } = await supabase.rpc(
     "ensure_fiscal_year_for_date",
-    { p_company_id: company.id, p_date: new Date().toISOString().slice(0, 10) },
+    { p_company_id: company.id, p_date: businessDate() },
   );
   if (fiscalEnsureError) throw fiscalEnsureError;
   const { data: fiscalYears, error: fyError } = await supabase
@@ -49,7 +51,7 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,parties(name),ledger_entries(debit,credit)",
+        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,parties(name),ledger_entries(debit,credit)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
@@ -96,6 +98,11 @@ async function snapshot(requestedFy?: string) {
     debit: v.voucher_type === "sale" ? Number(v.total) : 0,
     credit: v.voucher_type !== "sale" ? Number(v.total) : 0,
     payment_mode: v.payment_mode,
+    cheque_no: v.cheque_no,
+    cheque_bank: v.cheque_bank,
+    cheque_exchange_date: v.cheque_exchange_date,
+    cheque_status: v.cheque_status,
+    cheque_cleared_at: v.cheque_cleared_at,
     party:
       (v.parties as any)?.name ||
       (v.voucher_type === "expense" ? "Office Expense" : "Cash / General"),
@@ -204,6 +211,11 @@ export async function POST(request: Request) {
         { error: "Valid transaction and amount are required" },
         { status: 400 },
       );
+    if (type === "payment" && String(body.paymentMode) === "Cheque" && !body.chequeExchangeDate)
+      return NextResponse.json(
+        { error: "Cheque exchange date is required" },
+        { status: 400 },
+      );
     let partyId = body.partyId ? String(body.partyId) : null;
     const state = initialState;
     if (!partyId && body.partyName) {
@@ -225,13 +237,13 @@ export async function POST(request: Request) {
       if (error) throw error;
       partyId = data.id;
     }
-    const { error } =
+    const result =
       type === "purchase"
         ? await supabase.rpc("record_purchase_bill", {
             p_company_id: state.company.id,
             p_fiscal_year_id: state.fiscalYear.id,
             p_party_id: partyId,
-            p_date: String(body.date || new Date().toISOString().slice(0, 10)),
+            p_date: String(body.date || businessDate()),
             p_lines: lines,
             p_narration: String(body.particulars || ""),
           })
@@ -241,7 +253,7 @@ export async function POST(request: Request) {
               p_fiscal_year_id: state.fiscalYear.id,
               p_party_id: partyId,
               p_date: String(
-                body.date || new Date().toISOString().slice(0, 10),
+                body.date || businessDate(),
               ),
               p_lines: lines,
               p_discount_percent: Number(body.discountPercent || 0),
@@ -255,14 +267,27 @@ export async function POST(request: Request) {
               p_type: type === "payment" ? "receipt" : type,
               p_amount: amount,
               p_date: String(
-                body.date || new Date().toISOString().slice(0, 10),
+                body.date || businessDate(),
               ),
               p_narration: String(body.particulars || ""),
               p_payment_mode: body.paymentMode
                 ? String(body.paymentMode)
                 : null,
             });
-    if (error) throw error;
+    if (result.error) throw result.error;
+    if (type === "payment" && String(body.paymentMode) === "Cheque") {
+      const voucherId = (result.data as any)?.id;
+      if (!voucherId) throw new Error("Receipt was created but cheque details could not be linked");
+      const exchangeDate = String(body.chequeExchangeDate || "");
+      if (!exchangeDate) throw new Error("Cheque exchange date is required");
+      const { error: chequeError } = await supabase.from("vouchers").update({
+        cheque_no: String(body.chequeNo || "") || null,
+        cheque_bank: String(body.chequeBank || "") || null,
+        cheque_exchange_date: exchangeDate,
+        cheque_status: "pending",
+      }).eq("id", voucherId);
+      if (chequeError) throw chequeError;
+    }
     return NextResponse.json(await snapshot(state.fiscalYear.id), {
       status: 201,
     });
