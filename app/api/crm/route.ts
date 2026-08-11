@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
+import { sendTeamEmail } from "../../../lib/resend-email";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,23 @@ async function snapshot() {
   ]);
   for (const result of [members, leads, tasks, activities, parties]) if (result.error) throw result.error;
   return { company, members: members.data || [], leads: leads.data || [], tasks: tasks.data || [], activities: activities.data || [], parties: parties.data || [] };
+}
+
+async function notifyMember(
+  supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>,
+  memberId: string | null,
+  subject: string,
+  heading: string,
+  message: string,
+) {
+  if (!memberId) return;
+  const { data } = await supabase.from("team_members").select("name,email").eq("id", memberId).maybeSingle();
+  if (!data?.email) return;
+  try {
+    await sendTeamEmail({ to: data.email, subject, heading, message: `Hi ${data.name}, ${message}`, actionLabel: "Open Hamro Khata" });
+  } catch (error) {
+    console.error("Team notification email failed", error);
+  }
 }
 
 export async function GET() {
@@ -47,6 +65,7 @@ export async function POST(request: Request) {
     } else if (action === "create_task") {
       if (!String(body.title || "").trim()) return NextResponse.json({ error: "Task title is required" }, { status: 400 });
       ({ error } = await supabase.from("work_tasks").insert({ company_id: company.id, title: String(body.title).trim(), description: body.description || null, task_type: body.taskType || "general", priority: body.priority || "medium", assigned_to: body.assignedTo || null, lead_id: body.leadId || null, party_id: body.partyId || null, due_at: body.dueAt || null }));
+      if (!error) await notifyMember(supabase, body.assignedTo || null, `New task: ${body.title}`, "A new task was assigned to you", `${body.title}${body.dueAt ? ` · Due ${new Date(body.dueAt).toLocaleString("en-GB")}` : ""}.`);
     } else if (action === "add_activity") {
       if (!body.leadId && !body.partyId) return NextResponse.json({ error: "Select a lead or party" }, { status: 400 });
       const row = { company_id: company.id, activity_type: body.activityType || "note", subject: body.subject || null, remarks: String(body.remarks || "").trim(), outcome: body.outcome || null, member_id: body.memberId || null, lead_id: body.leadId || null, party_id: body.partyId || null, happened_at: body.happenedAt || new Date().toISOString(), next_action_at: body.nextActionAt || null };
@@ -54,6 +73,7 @@ export async function POST(request: Request) {
       ({ error } = await supabase.from("crm_activities").insert(row));
       if (!error && body.leadId) await supabase.from("leads").update({ last_contact_at: row.happened_at, next_follow_up_at: row.next_action_at }).eq("id", body.leadId);
       if (!error && body.nextActionAt) ({ error } = await supabase.from("work_tasks").insert({ company_id: company.id, title: body.taskTitle || `${body.activityType === "meeting" ? "Meeting" : "Follow up"}: ${body.subject || "client"}`, task_type: body.activityType === "meeting" ? "meeting" : body.activityType === "payment_collection" ? "payment_collection" : "call", assigned_to: body.memberId || null, lead_id: body.leadId || null, party_id: body.partyId || null, due_at: body.nextActionAt, priority: body.priority || "medium" }));
+      if (!error && body.nextActionAt) await notifyMember(supabase, body.memberId || null, "Follow-up scheduled", body.taskTitle || "A client follow-up was scheduled", `The next action is due ${new Date(body.nextActionAt).toLocaleString("en-GB")}.`);
     } else if (action === "update_lead") {
       ({ error } = await supabase.from("leads").update({ status: body.status, assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, updated_at: new Date().toISOString() }).eq("id", body.leadId).eq("company_id", company.id));
     } else if (action === "complete_task") {
