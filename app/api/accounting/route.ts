@@ -211,11 +211,14 @@ export async function POST(request: Request) {
         { error: "Valid transaction and amount are required" },
         { status: 400 },
       );
-    if (type === "payment" && String(body.paymentMode) === "Cheque" && !body.chequeExchangeDate)
-      return NextResponse.json(
-        { error: "Cheque exchange date is required" },
-        { status: 400 },
-      );
+    if (type === "payment" && String(body.paymentMode) === "Cheque") {
+      if (!String(body.chequeNo || "").trim())
+        return NextResponse.json({ error: "Cheque number is required" }, { status: 400 });
+      if (!String(body.chequeBank || "").trim())
+        return NextResponse.json({ error: "Bank name is required" }, { status: 400 });
+      if (!body.chequeExchangeDate)
+        return NextResponse.json({ error: "Cheque exchange date is required" }, { status: 400 });
+    }
     let partyId = body.partyId ? String(body.partyId) : null;
     const state = initialState;
     if (!partyId && body.partyName) {
@@ -281,12 +284,17 @@ export async function POST(request: Request) {
       const exchangeDate = String(body.chequeExchangeDate || "");
       if (!exchangeDate) throw new Error("Cheque exchange date is required");
       const { error: chequeError } = await supabase.from("vouchers").update({
-        cheque_no: String(body.chequeNo || "") || null,
-        cheque_bank: String(body.chequeBank || "") || null,
+        cheque_no: String(body.chequeNo).trim(),
+        cheque_bank: String(body.chequeBank).trim(),
         cheque_exchange_date: exchangeDate,
         cheque_status: "pending",
       }).eq("id", voucherId);
       if (chequeError) throw chequeError;
+      const { error: bankError } = await supabase.from("cheque_banks").upsert(
+        { company_id: state.company.id, name: String(body.chequeBank).trim(), active: true },
+        { onConflict: "company_id,name" },
+      );
+      if (bankError) throw bankError;
     }
     return NextResponse.json(await snapshot(state.fiscalYear.id), {
       status: 201,

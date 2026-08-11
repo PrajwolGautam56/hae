@@ -87,6 +87,7 @@ export default function Home() {
   const [chequeBank, setChequeBank] = useState("");
   const [chequeExchangeDate, setChequeExchangeDate] = useState("");
   const [chequeCounts, setChequeCounts] = useState({ pending: 0, dueToday: 0, overdue: 0 });
+  const [chequeBanks, setChequeBanks] = useState<any[]>([]);
   const [particulars, setParticulars] = useState("");
   const [saving, setSaving] = useState(false);
   const [calendar, setCalendar] = useState<"BS" | "AD">("BS");
@@ -121,7 +122,7 @@ export default function Home() {
     try {
       const response = await fetch("/api/cheques", { cache: "no-store" });
       const data = await response.json();
-      if (response.ok) setChequeCounts(data.counts);
+      if (response.ok) { setChequeCounts(data.counts); setChequeBanks(data.banks || []); }
     } catch {}
   }
   useEffect(() => { refreshChequeCounts(); }, []);
@@ -193,9 +194,10 @@ export default function Home() {
       setNotice("Please select a party or add a new party");
       return;
     }
-    if (modal === "payment" && paymentMode === "Cheque" && !chequeExchangeDate) {
-      setNotice("Please select the cheque exchange date");
-      return;
+    if (modal === "payment" && paymentMode === "Cheque") {
+      if (!chequeNo.trim()) { setNotice("Please enter the cheque number"); return; }
+      if (!chequeBank.trim()) { setNotice("Please enter or select the bank name"); return; }
+      if (!chequeExchangeDate) { setNotice("Please select the cheque exchange date"); return; }
     }
     setSaving(true);
     const response = await fetch("/api/accounting", {
@@ -1292,8 +1294,8 @@ export default function Home() {
                   {modal === "payment" && paymentMode === "Cheque" && (
                     <div className="cheque-fields full">
                       <div><strong>Cheque details</strong><span>This receipt stays pending until marked cleared.</span></div>
-                      <label>Cheque number<input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="Optional cheque no." /></label>
-                      <label>Bank name<input value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder="Optional bank" /></label>
+                      <label>Cheque number *<input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="Enter cheque number" /></label>
+                      <label>Bank name *<input list="cheque-bank-options" value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder="Select or type a new bank" /><datalist id="cheque-bank-options">{chequeBanks.map((bank:any)=><option key={bank.id} value={bank.name} />)}</datalist></label>
                       <label>Exchange / clearance date *<input type="date" value={chequeExchangeDate} onChange={(e) => setChequeExchangeDate(e.target.value)} /></label>
                     </div>
                   )}
