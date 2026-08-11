@@ -1,81 +1,1444 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import NepaliDate from "nepali-date-converter";
+import CrmWorkspace from "./crm-workspace";
+import ReportsWorkspace from "./reports-workspace";
 
-const parties = [
-  { name: "Tashi Delek Traders", place: "Phuentsholing", balance: 1842500, tone: "amber", initials: "TD" },
-  { name: "Druk Hardware House", place: "Thimphu", balance: 785400, tone: "blue", initials: "DH" },
-  { name: "Norbu Enterprise", place: "Paro", balance: -124000, tone: "green", initials: "NE" },
-  { name: "Karma General Store", place: "Gelephu", balance: 346800, tone: "violet", initials: "KG" },
+const seedParties = [
+  {
+    name: "Tashi Delek Traders",
+    place: "Phuentsholing",
+    balance: 1842500,
+    tone: "amber",
+    initials: "TD",
+  },
+  {
+    name: "Druk Hardware House",
+    place: "Thimphu",
+    balance: 785400,
+    tone: "blue",
+    initials: "DH",
+  },
+  {
+    name: "Norbu Enterprise",
+    place: "Paro",
+    balance: -124000,
+    tone: "green",
+    initials: "NE",
+  },
+  {
+    name: "Karma General Store",
+    place: "Gelephu",
+    balance: 346800,
+    tone: "violet",
+    initials: "KG",
+  },
 ];
 
-const transactions = [
-  { type: "Sales Invoice", party: "Tashi Delek Traders", ref: "INV-2081", date: "16 Jul 2026", debit: 485000, credit: 0 },
-  { type: "Payment Received", party: "Druk Hardware House", ref: "REC-0942 · Cash", date: "16 Jul 2026", debit: 0, credit: 200000 },
-  { type: "Purchase", party: "Himalayan Suppliers", ref: "PUR-0718", date: "15 Jul 2026", debit: 0, credit: 326500 },
-  { type: "Sales Invoice", party: "Karma General Store", ref: "INV-2080", date: "15 Jul 2026", debit: 175800, credit: 0 },
-  { type: "Office Expense", party: "Bhutan Telecom", ref: "EXP-0137 · Internet", date: "14 Jul 2026", debit: 0, credit: 4800 },
+const seedTransactions = [
+  {
+    type: "Sales Invoice",
+    party: "Tashi Delek Traders",
+    ref: "INV-2081",
+    date: "16 Jul 2026",
+    debit: 485000,
+    credit: 0,
+  },
+  {
+    type: "Payment Received",
+    party: "Druk Hardware House",
+    ref: "REC-0942 · Cash",
+    date: "16 Jul 2026",
+    debit: 0,
+    credit: 200000,
+  },
+  {
+    type: "Purchase",
+    party: "Himalayan Suppliers",
+    ref: "PUR-0718",
+    date: "15 Jul 2026",
+    debit: 0,
+    credit: 326500,
+  },
+  {
+    type: "Sales Invoice",
+    party: "Karma General Store",
+    ref: "INV-2080",
+    date: "15 Jul 2026",
+    debit: 175800,
+    credit: 0,
+  },
+  {
+    type: "Office Expense",
+    party: "Bhutan Telecom",
+    ref: "EXP-0137 · Internet",
+    date: "14 Jul 2026",
+    debit: 0,
+    credit: 4800,
+  },
 ];
 
-const nav = ["Overview", "Sales", "Purchases", "Payments", "Parties", "Inventory", "Expenses", "Reports"];
+const nav = [
+  "Overview",
+  "Sales",
+  "Purchases",
+  "Payments",
+  "Parties",
+  "Inventory",
+  "Expenses",
+  "Reports",
+  "Leads",
+  "Tasks",
+  "Activity",
+  "Team",
+];
 
 const money = (n: number) => `Nu. ${Math.abs(n).toLocaleString("en-IN")}`;
+const today = new Date().toISOString().slice(0, 10);
+const parseDate = (value: string) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T12:00:00`)
+    : new Date(value);
+const bsDate = (value: string) =>
+  new NepaliDate(parseDate(value)).format("DD MMMM YYYY", "np");
+const adMonths = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+const adDate = (value: string) => {
+  const d = parseDate(value);
+  return `${String(d.getDate()).padStart(2, "0")} ${adMonths[d.getMonth()]} ${d.getFullYear()}`;
+};
+type SaleLine = {
+  productId: string;
+  name: string;
+  quantity: number;
+  rate: number;
+};
+const emptySaleLine = (): SaleLine => ({
+  productId: "",
+  name: "",
+  quantity: 1,
+  rate: 0,
+});
 
 export default function Home() {
+  const [clientToday, setClientToday] = useState("");
   const [active, setActive] = useState("Overview");
   const [range, setRange] = useState("This month");
-  const [modal, setModal] = useState<"sale" | "payment" | null>(null);
+  const [modal, setModal] = useState<
+    "sale" | "payment" | "purchase" | "expense" | "party" | "product" | null
+  >(null);
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [formParty, setFormParty] = useState("Tashi Delek Traders");
-  const visibleParties = useMemo(() => parties.filter(p => p.name.toLowerCase().includes(query.toLowerCase())), [query]);
+  const [parties, setParties] = useState<any[]>(seedParties);
+  const [transactions, setTransactions] = useState<any[]>(seedTransactions);
+  const [totals, setTotals] = useState({
+    sales: 660800,
+    received: 200000,
+    receivable: 2970700,
+  });
+  const [amount, setAmount] = useState("");
+  const [paymentMode, setPaymentMode] = useState("Cash");
+  const [particulars, setParticulars] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [calendar, setCalendar] = useState<"BS" | "AD">("BS");
+  const [fiscalYears, setFiscalYears] = useState<any[]>([]);
+  const [fiscalYear, setFiscalYear] = useState<any>(null);
+  const [products, setProducts] = useState<any[]>([]);
+  const [saleLines, setSaleLines] = useState<SaleLine[]>([emptySaleLine()]);
+  const [taxPercent, setTaxPercent] = useState(13);
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [newPartyName, setNewPartyName] = useState("");
+  const [entityName, setEntityName] = useState("");
+  const [place, setPlace] = useState("");
+  const [phone, setPhone] = useState("");
+  const [sku, setSku] = useState("");
+  const [unit, setUnit] = useState("pcs");
+  const [salePrice, setSalePrice] = useState("");
+  const [purchasePrice, setPurchasePrice] = useState("");
+  const [openingStock, setOpeningStock] = useState("");
+  const [reportPartyId, setReportPartyId] = useState("");
+  const fiscalRequest = useRef(0);
+  const visibleParties = useMemo(
+    () =>
+      parties.filter((p) => p.name.toLowerCase().includes(query.toLowerCase())),
+    [parties, query],
+  );
 
-  function save(kind: string) {
+  useEffect(() => {
+    setClientToday(new Date().toISOString().slice(0, 10));
+  }, []);
+
+  function applySnapshot(data: any) {
+    setParties(
+      data.parties.map((p: any, i: number) => ({
+        ...p,
+        initials: p.name
+          .split(" ")
+          .map((x: string) => x[0])
+          .slice(0, 2)
+          .join(""),
+        tone: ["amber", "blue", "green", "violet"][i % 4],
+      })),
+    );
+    setTransactions(
+      data.transactions.map((t: any) => ({
+        ...t,
+        type:
+          (
+            {
+              sale: "Sales Invoice",
+              payment: "Payment Received",
+              purchase: "Purchase",
+              expense: "Office Expense",
+            } as any
+          )[t.type] || t.type,
+      })),
+    );
+    setTotals(data.totals);
+    setFiscalYears(data.fiscalYears || []);
+    setFiscalYear(data.fiscalYear || null);
+    setProducts(data.products || []);
+  }
+  useEffect(() => {
+    fetch("/api/accounting")
+      .then((r) => r.json())
+      .then(applySnapshot)
+      .catch(() => setNotice("Local database could not be loaded"));
+  }, []);
+  async function changeFiscalYear(id: string) {
+    const request = ++fiscalRequest.current;
+    const data = await fetch(`/api/accounting?fy=${id}`).then((r) => r.json());
+    if (request === fiscalRequest.current) applySnapshot(data);
+  }
+
+  async function save(kind: string) {
+    const party = parties.find((p) => p.name === formParty);
+    const validLines = saleLines.filter(
+      (l) => l.name.trim() && l.quantity > 0 && l.rate >= 0,
+    );
+    if (
+      (modal === "sale" || modal === "purchase") &&
+      (!validLines.length || (!party && !newPartyName.trim()))
+    ) {
+      setNotice("Please add a party and at least one valid product");
+      return;
+    }
+    if (
+      (modal === "payment" || modal === "expense") &&
+      (!amount || Number(amount) <= 0)
+    ) {
+      setNotice("Please enter a valid amount");
+      return;
+    }
+    setSaving(true);
+    const response = await fetch("/api/accounting", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: modal || "payment",
+        partyId: modal === "expense" ? undefined : party?.id,
+        partyName:
+          modal === "party"
+            ? entityName
+            : modal === "expense"
+              ? ""
+              : party?.name || newPartyName.trim(),
+        amount: Number(amount),
+        particulars,
+        paymentMode,
+        date: today,
+        fiscalYearId: fiscalYear?.id,
+        lines: validLines.map((l) => ({
+          product_id: l.productId || null,
+          name: l.name,
+          quantity: l.quantity,
+          rate: l.rate,
+        })),
+        taxPercent,
+        discountPercent,
+        productName: entityName,
+        sku,
+        unit,
+        salePrice: Number(salePrice || 0),
+        purchasePrice: Number(purchasePrice || 0),
+        openingStock: Number(openingStock || 0),
+        place,
+        phone,
+        partyType: "both",
+      }),
+    });
+    const data = await response.json();
+    setSaving(false);
+    if (!response.ok) {
+      setNotice(data.error || "Could not save");
+      return;
+    }
+    applySnapshot(data);
     setModal(null);
-    setNotice(`${kind} saved successfully`);
+    setAmount("");
+    setPaymentMode("Cash");
+    setParticulars("");
+    setSaleLines([emptySaleLine()]);
+    setNewPartyName("");
+    setEntityName("");
+    setPlace("");
+    setPhone("");
+    setSku("");
+    setSalePrice("");
+    setPurchasePrice("");
+    setOpeningStock("");
+    setNotice(`${kind} saved in local database`);
     window.setTimeout(() => setNotice(""), 2600);
   }
+  function openSale() {
+    setModal("sale");
+    setSaleLines([emptySaleLine()]);
+    setNewPartyName("");
+  }
+  function openModuleModal(kind: "purchase" | "expense" | "party" | "product") {
+    setModal(kind);
+    setAmount("");
+    setParticulars("");
+    setEntityName("");
+    if (kind === "purchase") setSaleLines([emptySaleLine()]);
+  }
+  function updateSaleLine(index: number, patch: Partial<SaleLine>) {
+    setSaleLines((lines) =>
+      lines.map((l, i) => (i === index ? { ...l, ...patch } : l)),
+    );
+  }
+  function chooseProduct(index: number, id: string) {
+    const product = products.find((p) => p.id === id);
+    updateSaleLine(
+      index,
+      product
+        ? {
+            productId: id,
+            name: product.name,
+            rate: Number(
+              modal === "purchase"
+                ? product.purchase_price
+                : product.sale_price,
+            ),
+          }
+        : { productId: "", name: "", rate: 0 },
+    );
+  }
+  const saleSubtotal = saleLines.reduce(
+    (s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0),
+    0,
+  );
+  const saleDiscount = (saleSubtotal * Math.max(0, discountPercent)) / 100;
+  const saleTax =
+    ((saleSubtotal - saleDiscount) * Math.max(0, taxPercent)) / 100;
+  const saleGrand = saleSubtotal - saleDiscount + saleTax;
+  const salesTransactions = transactions.filter(
+    (t) => t.type === "Sales Invoice",
+  );
+  const nextInvoice = String(
+    Math.max(0, ...salesTransactions.map((t) => Number(t.sequence_no) || 0)) +
+      1,
+  ).padStart(4, "0");
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">ह</div><div><strong>हाम्रो खाता</strong><span>TRADING & ACCOUNTS</span></div></div>
+        <div className="brand">
+          <div className="brand-mark">ह</div>
+          <div>
+            <strong>हाम्रो खाता</strong>
+            <span>TRADING & ACCOUNTS</span>
+          </div>
+        </div>
         <nav>
           <p>WORKSPACE</p>
-          {nav.map((item, i) => <button key={item} className={active === item ? "active" : ""} onClick={() => setActive(item)}><i>{["⌂","↗","↙","⇄","♙","▦","◫","▥"][i]}</i>{item}{item === "Inventory" && <b>12</b>}</button>)}
+          {nav.map((item, i) => (
+            <button
+              key={item}
+              className={active === item ? "active" : ""}
+              onClick={() => setActive(item)}
+            >
+              <i>{["⌂", "↗", "↙", "⇄", "♙", "▦", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
+              {item}
+              {item === "Inventory" && <b>12</b>}
+            </button>
+          ))}
         </nav>
         <div className="sidebar-foot">
-          <button><i>⚙</i>Settings</button><button><i>?</i>Help & Support</button>
-          <div className="profile"><div>PG</div><span><strong>Prajwol Gautam</strong><small>Administrator</small></span><button>⋮</button></div>
+          <button>
+            <i>⚙</i>Settings
+          </button>
+          <button>
+            <i>?</i>Help & Support
+          </button>
+          <div className="profile">
+            <div>PG</div>
+            <span>
+              <strong>Prajwol Gautam</strong>
+              <small>Administrator</small>
+            </span>
+            <button>⋮</button>
+          </div>
         </div>
       </aside>
 
       <section className="content">
-        <header><div><button className="mobile-menu">☰</button><span className="company-dot">H</span><div><strong>Himalayan Link Trading</strong><small>FY 2026–27 · BTN</small></div><button className="chev">⌄</button></div><div><button className="icon-btn">⌕</button><button className="icon-btn">♢<em></em></button><button className="primary" onClick={() => setModal("sale")}>＋ New Transaction</button></div></header>
+        <header>
+          <div>
+            <button className="mobile-menu">☰</button>
+            <span className="company-dot">H</span>
+            <div>
+              <strong>Himalayan Link Trading</strong>
+              <small>FY {fiscalYear?.label_bs || "2083/84"} · BTN</small>
+            </div>
+          </div>
+          <div className="fy-tools">
+            <select
+              aria-label="Financial year"
+              value={fiscalYear?.id || ""}
+              onChange={(e) => changeFiscalYear(e.target.value)}
+            >
+              {fiscalYears.map((f) => (
+                <option key={f.id} value={f.id}>
+                  FY {f.label_bs}
+                  {f.status === "open" ? " · Current" : ""}
+                </option>
+              ))}
+            </select>
+            <div className="calendar-toggle">
+              <button
+                className={calendar === "BS" ? "on" : ""}
+                onClick={() => setCalendar("BS")}
+              >
+                BS
+              </button>
+              <button
+                className={calendar === "AD" ? "on" : ""}
+                onClick={() => setCalendar("AD")}
+              >
+                AD
+              </button>
+            </div>
+            {active === "Overview" && (
+              <button
+                className="primary"
+                disabled={fiscalYear?.status === "closed"}
+                onClick={() => fiscalYear?.status !== "closed" && openSale()}
+              >
+                ＋ New Transaction
+              </button>
+            )}
+          </div>
+        </header>
 
         <div className="page">
-          <div className="title-row"><div><p>Thursday, 16 July</p><h1>{active}</h1></div><div className="title-actions"><button className="date-pill">◷ &nbsp;{range}⌄</button><button className="dots">•••</button></div></div>
-
-          <div className="summary-grid">
-            <article><div className="stat-head"><span className="stat-icon blue">↗</span><button>•••</button></div><p>TOTAL SALES</p><h2>Nu. 2,840,500</h2><small><b>↑ 12.4%</b> vs last month</small><div className="spark blue-spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-            <article><div className="stat-head"><span className="stat-icon orange">◔</span><button>•••</button></div><p>RECEIVABLE</p><h2>Nu. 3,098,700</h2><small><mark>18 invoices</mark> awaiting payment</small><div className="spark orange-spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-            <article><div className="stat-head"><span className="stat-icon green">↙</span><button>•••</button></div><p>CASH RECEIVED</p><h2>Nu. 1,624,800</h2><small><b>↑ 8.2%</b> vs last month</small><div className="spark green-spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
-            <article><div className="stat-head"><span className="stat-icon violet">▦</span><button>•••</button></div><p>STOCK VALUE</p><h2>Nu. 4,210,600</h2><small><mark className="redmark">12 items</mark> low in stock</small><div className="spark violet-spark"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+          <div className="title-row">
+            <div>
+              <p>
+                {clientToday
+                  ? calendar === "BS"
+                    ? bsDate(clientToday)
+                    : adDate(clientToday)
+                  : "—"} · FY{" "}
+                {fiscalYear?.label_bs}
+              </p>
+              <h1>{active}</h1>
+            </div>
+            <div className="title-actions">
+              <span className={`year-status ${fiscalYear?.status}`}>
+                {fiscalYear?.status === "closed"
+                  ? "Closed year"
+                  : "Current year"}
+              </span>
+              <button
+                className="date-pill"
+                onClick={() =>
+                  setRange(
+                    range === "This month" ? "This fiscal year" : "This month",
+                  )
+                }
+              >
+                ◷ &nbsp;{range}
+              </button>
+            </div>
           </div>
 
-          <div className="dashboard-grid">
-            <article className="activity card"><div className="card-title"><div><h3>Sales & Collections</h3><p>Monthly performance overview</p></div><div className="legend"><span><i className="leg-sales"></i>Sales</span><span><i className="leg-cash"></i>Collections</span><button>•••</button></div></div><div className="chart"><div className="ylabels"><span>800k</span><span>600k</span><span>400k</span><span>200k</span><span>0</span></div><div className="plot"><div className="gridline g1"></div><div className="gridline g2"></div><div className="gridline g3"></div><div className="gridline g4"></div><div className="chart-lines"><div className="line sales-line"></div><div className="line cash-line"></div><span className="point p1"></span><span className="point p2"></span></div><div className="xlabels"><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span></div></div></div></article>
+          {["Leads", "Tasks", "Activity", "Team"].includes(active) ? (
+            <CrmWorkspace section={active} onNotice={setNotice} />
+          ) : active === "Overview" ? (
+            <>
+              <div className="summary-grid">
+                <article>
+                  <div className="stat-head">
+                    <span className="stat-icon blue">↗</span>
+                    <button>•••</button>
+                  </div>
+                  <p>TOTAL SALES</p>
+                  <h2>{money(totals.sales)}</h2>
+                  <small>Recorded in Supabase</small>
+                  <div className="spark blue-spark">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                  </div>
+                </article>
+                <article>
+                  <div className="stat-head">
+                    <span className="stat-icon orange">◔</span>
+                    <button>•••</button>
+                  </div>
+                  <p>RECEIVABLE</p>
+                  <h2>{money(totals.receivable)}</h2>
+                  <small>Current party balances</small>
+                  <div className="spark orange-spark">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                  </div>
+                </article>
+                <article>
+                  <div className="stat-head">
+                    <span className="stat-icon green">↙</span>
+                    <button>•••</button>
+                  </div>
+                  <p>CASH RECEIVED</p>
+                  <h2>{money(totals.received)}</h2>
+                  <small>Saved payment receipts</small>
+                  <div className="spark green-spark">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                  </div>
+                </article>
+                <article>
+                  <div className="stat-head">
+                    <span className="stat-icon violet">▦</span>
+                    <button>•••</button>
+                  </div>
+                  <p>STOCK VALUE</p>
+                  <h2>Nu. 4,210,600</h2>
+                  <small>
+                    <mark className="redmark">12 items</mark> low in stock
+                  </small>
+                  <div className="spark violet-spark">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                  </div>
+                </article>
+              </div>
 
-            <article className="quick card"><div className="card-title"><div><h3>Quick Actions</h3><p>Record a transaction</p></div></div><div className="quick-grid"><button onClick={() => setModal("sale")}><i className="qa-blue">↗</i><span><strong>Sales Invoice</strong><small>Create a new bill</small></span></button><button onClick={() => setModal("payment")}><i className="qa-green">↓</i><span><strong>Receive Payment</strong><small>Cash, bank or cheque</small></span></button><button onClick={() => setNotice("Purchase form will open in the next module")}><i className="qa-orange">↙</i><span><strong>Add Purchase</strong><small>Stock or expense</small></span></button><button onClick={() => setNotice("Expense form will open in the next module")}><i className="qa-violet">◫</i><span><strong>Add Expense</strong><small>Record office expense</small></span></button></div></article>
+              <div className="dashboard-grid">
+                <article className="activity card">
+                  <div className="card-title">
+                    <div>
+                      <h3>Sales & Collections</h3>
+                      <p>Monthly performance overview</p>
+                    </div>
+                    <div className="legend">
+                      <span>
+                        <i className="leg-sales"></i>Sales
+                      </span>
+                      <span>
+                        <i className="leg-cash"></i>Collections
+                      </span>
+                      <button>•••</button>
+                    </div>
+                  </div>
+                  <div className="chart">
+                    <div className="ylabels">
+                      <span>800k</span>
+                      <span>600k</span>
+                      <span>400k</span>
+                      <span>200k</span>
+                      <span>0</span>
+                    </div>
+                    <div className="plot">
+                      <div className="gridline g1"></div>
+                      <div className="gridline g2"></div>
+                      <div className="gridline g3"></div>
+                      <div className="gridline g4"></div>
+                      <div className="chart-lines">
+                        <div className="line sales-line"></div>
+                        <div className="line cash-line"></div>
+                        <span className="point p1"></span>
+                        <span className="point p2"></span>
+                      </div>
+                      <div className="xlabels">
+                        <span>Feb</span>
+                        <span>Mar</span>
+                        <span>Apr</span>
+                        <span>May</span>
+                        <span>Jun</span>
+                        <span>Jul</span>
+                      </div>
+                    </div>
+                  </div>
+                </article>
 
-            <article className="recent card"><div className="card-title"><div><h3>Recent Transactions</h3><p>Latest entries across all accounts</p></div><button className="link" onClick={() => setActive("Reports")}>View day book →</button></div><div className="table-wrap"><table><thead><tr><th>TYPE</th><th>PARTY / ACCOUNT</th><th>DATE</th><th>DEBIT</th><th>CREDIT</th><th></th></tr></thead><tbody>{transactions.map((t, i) => <tr key={i}><td><span className={`tx-icon t${i}`}>{["↗","↓","↙","↗","◫"][i]}</span><div><strong>{t.type}</strong><small>{t.ref}</small></div></td><td>{t.party}</td><td>{t.date}</td><td className="debit">{t.debit ? money(t.debit) : "—"}</td><td className="credit">{t.credit ? money(t.credit) : "—"}</td><td>•••</td></tr>)}</tbody></table></div></article>
+                <article className="quick card">
+                  <div className="card-title">
+                    <div>
+                      <h3>Quick Actions</h3>
+                      <p>Record a transaction</p>
+                    </div>
+                  </div>
+                  <div className="quick-grid">
+                    <button
+                      disabled={fiscalYear?.status === "closed"}
+                      onClick={() =>
+                        fiscalYear?.status !== "closed" && openSale()
+                      }
+                    >
+                      <i className="qa-blue">↗</i>
+                      <span>
+                        <strong>Sales Invoice</strong>
+                        <small>Create a new bill</small>
+                      </span>
+                    </button>
+                    <button
+                      disabled={fiscalYear?.status === "closed"}
+                      onClick={() =>
+                        fiscalYear?.status !== "closed" && setModal("payment")
+                      }
+                    >
+                      <i className="qa-green">↓</i>
+                      <span>
+                        <strong>Receive Payment</strong>
+                        <small>Cash, bank or cheque</small>
+                      </span>
+                    </button>
+                    <button onClick={() => openModuleModal("purchase")}>
+                      <i className="qa-orange">↙</i>
+                      <span>
+                        <strong>Add Purchase</strong>
+                        <small>Stock or expense</small>
+                      </span>
+                    </button>
+                    <button onClick={() => openModuleModal("expense")}>
+                      <i className="qa-violet">◫</i>
+                      <span>
+                        <strong>Add Expense</strong>
+                        <small>Record office expense</small>
+                      </span>
+                    </button>
+                  </div>
+                </article>
 
-            <article className="balances card"><div className="card-title"><div><h3>Top Outstanding</h3><p>Parties with pending balance</p></div><button className="link" onClick={() => setActive("Parties")}>View all →</button></div><div className="search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search party" /></div><div className="party-list">{visibleParties.map(p => <button key={p.name} onClick={() => { setFormParty(p.name); setModal("payment"); }}><span className={`avatar ${p.tone}`}>{p.initials}</span><span><strong>{p.name}</strong><small>{p.place}</small></span><span className={p.balance < 0 ? "advance" : "due"}><strong>{money(p.balance)}</strong><small>{p.balance < 0 ? "Advance" : "To receive"}</small></span></button>)}</div></article>
-          </div>
+                <article className="recent card">
+                  <div className="card-title">
+                    <div>
+                      <h3>Recent Transactions</h3>
+                      <p>
+                        FY {fiscalYear?.label_bs} entries · {calendar} dates
+                      </p>
+                    </div>
+                    <button
+                      className="link"
+                      onClick={() => setActive("Reports")}
+                    >
+                      View day book →
+                    </button>
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>TYPE</th>
+                          <th>PARTY / ACCOUNT</th>
+                          <th>DATE</th>
+                          <th>DEBIT</th>
+                          <th>CREDIT</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.map((t, i) => (
+                          <tr key={i}>
+                            <td>
+                              <span className={`tx-icon t${i % 5}`}>
+                                {["↗", "↓", "↙", "↗", "◫"][i % 5]}
+                              </span>
+                              <div>
+                                <strong>{t.type}</strong>
+                                <small>{t.ref}</small>
+                              </div>
+                            </td>
+                            <td>{t.party}</td>
+                            <td>
+                              {calendar === "BS"
+                                ? bsDate(t.date)
+                                : adDate(t.date)}
+                            </td>
+                            <td className="debit">
+                              {t.debit ? money(t.debit) : "—"}
+                            </td>
+                            <td className="credit">
+                              {t.credit ? money(t.credit) : "—"}
+                            </td>
+                            <td>•••</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </article>
+
+                <article className="balances card">
+                  <div className="card-title">
+                    <div>
+                      <h3>Top Outstanding</h3>
+                      <p>Parties with pending balance</p>
+                    </div>
+                    <button
+                      className="link"
+                      onClick={() => setActive("Parties")}
+                    >
+                      View all →
+                    </button>
+                  </div>
+                  <div className="search">
+                    <span>⌕</span>
+                    <input
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      placeholder="Search party"
+                    />
+                  </div>
+                  <div className="party-list">
+                    {visibleParties.map((p) => (
+                      <button
+                        key={p.name}
+                        disabled={fiscalYear?.status === "closed"}
+                        onClick={() => {
+                          if (fiscalYear?.status === "closed") return;
+                          setFormParty(p.name);
+                          setModal("payment");
+                        }}
+                      >
+                        <span className={`avatar ${p.tone}`}>{p.initials}</span>
+                        <span>
+                          <strong>{p.name}</strong>
+                          <small>{p.place}</small>
+                        </span>
+                        <span className={p.balance < 0 ? "advance" : "due"}>
+                          <strong>{money(p.balance)}</strong>
+                          <small>
+                            {p.balance < 0 ? "Advance" : "To receive"}
+                          </small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              </div>
+            </>
+          ) : active === "Sales" ? (
+            <section className="module-page sales-module">
+              <div className="module-hero">
+                <div>
+                  <span>SALES CONTROL</span>
+                  <h2>Sales invoices</h2>
+                  <p>
+                    Review the last bill first, then create the next invoice.
+                  </p>
+                </div>
+                <button
+                  className="primary"
+                  disabled={fiscalYear?.status === "closed"}
+                  onClick={openSale}
+                >
+                  ＋ Add sales invoice
+                </button>
+              </div>
+              <div className="sales-stats">
+                <article>
+                  <small>TOTAL SALES · FY {fiscalYear?.label_bs}</small>
+                  <strong>{money(totals.sales)}</strong>
+                </article>
+                <article>
+                  <small>INVOICES ISSUED</small>
+                  <strong>{salesTransactions.length}</strong>
+                </article>
+                <article>
+                  <small>LAST INVOICE</small>
+                  <strong>{salesTransactions[0]?.ref || "No bill yet"}</strong>
+                </article>
+                <article>
+                  <small>NEXT NUMBER</small>
+                  <strong>
+                    INV-{fiscalYear?.label_bs}-{nextInvoice}
+                  </strong>
+                </article>
+              </div>
+              <article className="card sales-list">
+                <div className="card-title">
+                  <div>
+                    <h3>Sales bill register</h3>
+                    <p>Latest invoice is shown first</p>
+                  </div>
+                  <button className="primary soft" onClick={openSale}>
+                    ＋ New bill
+                  </button>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>INVOICE</th>
+                        <th>DATE</th>
+                        <th>PARTY</th>
+                        <th>AMOUNT</th>
+                        <th>STATUS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {salesTransactions.length ? (
+                        salesTransactions.map((t) => (
+                          <tr key={t.id}>
+                            <td>
+                              <strong>{t.ref}</strong>
+                            </td>
+                            <td>
+                              {calendar === "BS"
+                                ? bsDate(t.date)
+                                : adDate(t.date)}
+                            </td>
+                            <td>{t.party}</td>
+                            <td className="debit">{money(t.debit)}</td>
+                            <td>
+                              <span className="paid-chip">Posted</span>
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={5} className="empty-year">
+                            No sales invoice in this fiscal year. The next
+                            invoice will start at 0001.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            </section>
+          ) : active === "Reports" ? (
+            <ReportsWorkspace
+              parties={parties}
+              fiscalYear={fiscalYear}
+              initialPartyId={reportPartyId}
+              onNotice={setNotice}
+            />
+          ) : (
+            <section className="module-page">
+              <div className="module-hero">
+                <div>
+                  <span>{active.toUpperCase()} MODULE</span>
+                  <h2>{active}</h2>
+                  <p>
+                    {active === "Purchases"
+                      ? "Purchase bills automatically increase inventory."
+                      : active === "Inventory"
+                        ? "Manage products, prices and live stock."
+                        : active === "Parties"
+                          ? "Customers, suppliers and their balances."
+                          : active === "Payments"
+                            ? "Record and review party receipts."
+                            : "Record office and operating expenses."}
+                  </p>
+                </div>
+                {active === "Purchases" && (
+                  <button
+                    className="primary"
+                    onClick={() => openModuleModal("purchase")}
+                  >
+                    ＋ Add purchase bill
+                  </button>
+                )}
+                {active === "Inventory" && (
+                  <button
+                    className="primary"
+                    onClick={() => openModuleModal("product")}
+                  >
+                    ＋ Add inventory item
+                  </button>
+                )}
+                {active === "Parties" && (
+                  <button
+                    className="primary"
+                    onClick={() => openModuleModal("party")}
+                  >
+                    ＋ Add party
+                  </button>
+                )}
+                {active === "Payments" && (
+                  <button
+                    className="primary"
+                    onClick={() => setModal("payment")}
+                  >
+                    ＋ Receive payment
+                  </button>
+                )}
+                {active === "Expenses" && (
+                  <button
+                    className="primary"
+                    onClick={() => openModuleModal("expense")}
+                  >
+                    ＋ Add expense
+                  </button>
+                )}
+              </div>
+              <article className="card sales-list">
+                <div className="card-title">
+                  <div>
+                    <h3>{active} register</h3>
+                    <p>Live Supabase records</p>
+                  </div>
+                </div>
+                <div className="table-wrap">
+                  {active === "Inventory" ? (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>SKU</th>
+                          <th>PRODUCT</th>
+                          <th>UNIT</th>
+                          <th>PURCHASE</th>
+                          <th>SALE</th>
+                          <th>STOCK</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {products.map((p) => (
+                          <tr key={p.id}>
+                            <td>{p.sku || "—"}</td>
+                            <td>
+                              <strong>{p.name}</strong>
+                            </td>
+                            <td>{p.unit}</td>
+                            <td>{money(Number(p.purchase_price))}</td>
+                            <td>{money(Number(p.sale_price))}</td>
+                            <td>
+                              <strong>{p.stock_qty}</strong>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : active === "Parties" ? (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>PARTY</th>
+                          <th>PLACE</th>
+                          <th>OPENING</th>
+                          <th>BALANCE</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parties.map((p) => (
+                          <tr
+                            key={p.id}
+                            className="clickable-party"
+                            tabIndex={0}
+                            onClick={() => {
+                              setReportPartyId(p.id);
+                              setActive("Reports");
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                setReportPartyId(p.id);
+                                setActive("Reports");
+                              }
+                            }}
+                          >
+                            <td>
+                              <strong>{p.name}</strong>
+                            </td>
+                            <td>{p.place || "—"}</td>
+                            <td>{money(Number(p.opening_balance))}</td>
+                            <td>{money(Number(p.balance))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>REFERENCE</th>
+                          <th>DATE</th>
+                          <th>PARTY / ACCOUNT</th>
+                          <th>AMOUNT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions
+                          .filter((t) =>
+                            active === "Purchases"
+                              ? t.type === "Purchase"
+                              : active === "Payments"
+                                ? t.type === "Payment Received"
+                                : active === "Expenses"
+                                  ? t.type === "Office Expense"
+                                  : true,
+                          )
+                          .map((t) => (
+                            <tr key={t.id}>
+                              <td>
+                                <strong>{t.ref}</strong>
+                              </td>
+                              <td>
+                                {calendar === "BS"
+                                  ? bsDate(t.date)
+                                  : adDate(t.date)}
+                              </td>
+                              <td>{t.party}</td>
+                              <td>{money(t.debit || t.credit)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </article>
+            </section>
+          )}
         </div>
       </section>
 
-      {modal && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal" onMouseDown={e => e.stopPropagation()}><div className="modal-head"><div><small>{modal === "sale" ? "SALES" : "RECEIPT"}</small><h2>{modal === "sale" ? "Create sales invoice" : "Receive payment"}</h2></div><button onClick={() => setModal(null)}>×</button></div><div className="form-grid"><label className="full">Party / Customer<select value={formParty} onChange={e => setFormParty(e.target.value)}>{parties.map(p => <option key={p.name}>{p.name}</option>)}</select></label><label>Date<input type="date" defaultValue="2026-07-16" /></label><label>{modal === "sale" ? "Invoice no." : "Receipt no."}<input defaultValue={modal === "sale" ? "INV-2082" : "REC-0943"} /></label>{modal === "sale" ? <><label className="full">Product / Particulars<input placeholder="Search inventory or type custom item" /></label><label>Quantity<input type="number" defaultValue="1" /></label><label>Rate (Nu.)<input type="number" placeholder="0.00" /></label><label>Sale type<select><option>Credit</option><option>Cash</option></select></label><label>Payment received<input type="number" placeholder="Optional partial amount" /></label></> : <><label>Amount received (Nu.)<input type="number" placeholder="0.00" /></label><label>Payment mode<select><option>Cash</option><option>Bank transfer</option><option>Cheque</option></select></label><label className="full">Reference / Note<input placeholder="Cheque no., bank ref. or note" /></label></>}</div><div className="balance-note"><span>Current balance</span><strong>Nu. 1,842,500 Dr.</strong></div><div className="modal-actions"><button onClick={() => setModal(null)}>Cancel</button><button className="primary" onClick={() => save(modal === "sale" ? "Invoice" : "Receipt")}>{modal === "sale" ? "Save invoice" : "Save receipt"}</button></div></section></div>}
+      {modal && !["party", "product"].includes(modal) && (
+        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+          <section className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <small>
+                  {modal === "sale"
+                    ? "SALES"
+                    : modal === "purchase"
+                      ? "PURCHASE"
+                      : modal === "expense"
+                        ? "EXPENSE"
+                        : "RECEIPT"}{" "}
+                  · FY {fiscalYear?.label_bs}
+                </small>
+                <h2>
+                  {modal === "sale"
+                    ? "Create sales invoice"
+                    : modal === "purchase"
+                      ? "Create purchase bill"
+                      : modal === "expense"
+                        ? "Add expense"
+                        : "Receive payment"}
+                </h2>
+              </div>
+              <button onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="form-grid">
+              {modal !== "expense" && (
+                <>
+                  <label className="full">
+                    {modal === "purchase"
+                      ? "Supplier / Party"
+                      : "Party / Customer"}
+                    <select
+                      value={formParty}
+                      onChange={(e) => {
+                        setFormParty(e.target.value);
+                        if (e.target.value !== "__new__") setNewPartyName("");
+                      }}
+                    >
+                      {parties.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                      <option value="__new__">
+                        ＋ Add new party instantly
+                      </option>
+                    </select>
+                  </label>
+                  {formParty === "__new__" && (
+                    <label className="full">
+                      New party name
+                      <input
+                        autoFocus
+                        value={newPartyName}
+                        onChange={(e) => setNewPartyName(e.target.value)}
+                        placeholder="Type customer / company name"
+                      />
+                    </label>
+                  )}
+                </>
+              )}
+              <label>
+                Date ({calendar})
+                {calendar === "BS" ? (
+                  <input
+                    type="text"
+                    readOnly
+                    value={clientToday ? bsDate(clientToday) : ""}
+                  />
+                ) : (
+                  <input type="date" defaultValue={today} />
+                )}
+              </label>
+              <label>
+                Reference
+                <input
+                  readOnly
+                  placeholder="Auto numbering · starts at 0001 each FY"
+                />
+              </label>
+              {modal === "sale" || modal === "purchase" ? (
+                <div className="invoice-builder full">
+                  <div className="line-head">
+                    <span>PRODUCT / DESCRIPTION</span>
+                    <span>QTY</span>
+                    <span>RATE</span>
+                    <span>AMOUNT</span>
+                    <span></span>
+                  </div>
+                  {saleLines.map((line, index) => (
+                    <div className="invoice-line" key={index}>
+                      <div>
+                        <select
+                          value={line.productId}
+                          onChange={(e) => chooseProduct(index, e.target.value)}
+                        >
+                          <option value="">Custom / non-inventory item</option>
+                          {products.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} · Stock {p.stock_qty}
+                            </option>
+                          ))}
+                        </select>
+                        {!line.productId && (
+                          <input
+                            value={line.name}
+                            onChange={(e) =>
+                              updateSaleLine(index, { name: e.target.value })
+                            }
+                            placeholder="Type item name"
+                          />
+                        )}
+                      </div>
+                      <input
+                        aria-label={`Quantity ${index + 1}`}
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        value={line.quantity}
+                        onChange={(e) =>
+                          updateSaleLine(index, {
+                            quantity: Number(e.target.value),
+                          })
+                        }
+                      />
+                      <input
+                        aria-label={`Rate ${index + 1}`}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.rate}
+                        onChange={(e) =>
+                          updateSaleLine(index, {
+                            rate: Number(e.target.value),
+                          })
+                        }
+                      />
+                      <strong>{money(line.quantity * line.rate)}</strong>
+                      <button
+                        aria-label={`Remove item ${index + 1}`}
+                        disabled={saleLines.length === 1}
+                        onClick={() =>
+                          setSaleLines((lines) =>
+                            lines.filter((_, i) => i !== index),
+                          )
+                        }
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    className="add-line"
+                    onClick={() =>
+                      setSaleLines((lines) => [...lines, emptySaleLine()])
+                    }
+                  >
+                    ＋ Add another product
+                  </button>
+                  <label className="invoice-note">
+                    Narration / note
+                    <input
+                      value={particulars}
+                      onChange={(e) => setParticulars(e.target.value)}
+                      placeholder="Optional invoice note"
+                    />
+                  </label>
+                  <div className="invoice-summary">
+                    <div>
+                      <span>Subtotal</span>
+                      <strong>{money(saleSubtotal)}</strong>
+                    </div>
+                    <div>
+                      <label>
+                        Discount %
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={discountPercent}
+                          onChange={(e) =>
+                            setDiscountPercent(Number(e.target.value))
+                          }
+                        />
+                      </label>
+                      <strong>− {money(saleDiscount)}</strong>
+                    </div>
+                    <div>
+                      <label>
+                        VAT / Tax %
+                        <input
+                          type="number"
+                          min="0"
+                          value={taxPercent}
+                          onChange={(e) =>
+                            setTaxPercent(Number(e.target.value))
+                          }
+                        />
+                      </label>
+                      <strong>＋ {money(saleTax)}</strong>
+                    </div>
+                    <div className="grand">
+                      <span>Grand total</span>
+                      <strong>
+                        {money(modal === "purchase" ? saleSubtotal : saleGrand)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <label className="full">
+                    Reference / Note
+                    <input
+                      value={particulars}
+                      onChange={(e) => setParticulars(e.target.value)}
+                      placeholder="Cheque no., bank ref. or note"
+                    />
+                  </label>
+                  <label>
+                    Amount (Nu.)
+                    <input
+                      type="number"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  {modal === "payment" && (
+                    <label>
+                      Payment mode
+                      <select
+                        value={paymentMode}
+                        onChange={(e) => setPaymentMode(e.target.value)}
+                      >
+                        <option>Cash</option>
+                        <option>Bank transfer</option>
+                        <option>Cheque</option>
+                      </select>
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="balance-note">
+              <span>Current balance</span>
+              <strong>
+                {money(parties.find((p) => p.name === formParty)?.balance || 0)}{" "}
+                Dr.
+              </strong>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setModal(null)}>Cancel</button>
+              <button
+                className="primary"
+                disabled={saving}
+                onClick={() =>
+                  save(
+                    modal === "sale"
+                      ? "Invoice"
+                      : modal === "purchase"
+                        ? "Purchase"
+                        : modal === "expense"
+                          ? "Expense"
+                          : "Receipt",
+                  )
+                }
+              >
+                {saving
+                  ? "Saving…"
+                  : modal === "sale"
+                    ? "Save invoice"
+                    : modal === "purchase"
+                      ? "Save purchase"
+                      : modal === "expense"
+                        ? "Save expense"
+                        : "Save receipt"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {(modal === "party" || modal === "product") && (
+        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+          <section
+            className="modal compact-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <div>
+                <small>
+                  {modal === "party" ? "PARTY MASTER" : "INVENTORY MASTER"}
+                </small>
+                <h2>
+                  {modal === "party" ? "Add new party" : "Add inventory item"}
+                </h2>
+              </div>
+              <button onClick={() => setModal(null)}>×</button>
+            </div>
+            <div className="form-grid">
+              <label className="full">
+                {modal === "party" ? "Party / company name" : "Product name"}
+                <input
+                  autoFocus
+                  value={entityName}
+                  onChange={(e) => setEntityName(e.target.value)}
+                  placeholder="Required"
+                />
+              </label>
+              {modal === "party" ? (
+                <>
+                  <label>
+                    Place / Address
+                    <input
+                      value={place}
+                      onChange={(e) => setPlace(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Phone
+                    <input
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    SKU / Code
+                    <input
+                      value={sku}
+                      onChange={(e) => setSku(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Unit
+                    <select
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                    >
+                      <option>pcs</option>
+                      <option>bag</option>
+                      <option>kg</option>
+                      <option>box</option>
+                      <option>sheet</option>
+                      <option>meter</option>
+                    </select>
+                  </label>
+                  <label>
+                    Purchase price
+                    <input
+                      type="number"
+                      value={purchasePrice}
+                      onChange={(e) => setPurchasePrice(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Sale price
+                    <input
+                      type="number"
+                      value={salePrice}
+                      onChange={(e) => setSalePrice(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Opening stock
+                    <input
+                      type="number"
+                      value={openingStock}
+                      onChange={(e) => setOpeningStock(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setModal(null)}>Cancel</button>
+              <button
+                className="primary"
+                disabled={saving}
+                onClick={() => save(modal === "party" ? "Party" : "Product")}
+              >
+                {saving
+                  ? "Saving…"
+                  : modal === "party"
+                    ? "Save party"
+                    : "Save item"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {notice && <div className="toast">✓ {notice}</div>}
     </main>
   );
