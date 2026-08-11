@@ -19,7 +19,10 @@ async function setupLink(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, e
   const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3010"}/reset-password`;
   const { data, error } = await db.auth.admin.generateLink({ type: "recovery", email, options: { redirectTo } });
   if (error) throw error;
-  return data.properties.action_link;
+  const resetUrl = new URL(redirectTo);
+  resetUrl.searchParams.set("token_hash", data.properties.hashed_token);
+  resetUrl.searchParams.set("type", "recovery");
+  return resetUrl.toString();
 }
 
 export async function GET(request: Request) {
