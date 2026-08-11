@@ -314,6 +314,19 @@ export default function Home() {
         : { productId: "", name: "", rate: 0 },
     );
   }
+  function wheelNumberInput(event: any) {
+    event.preventDefault();
+    event.currentTarget.blur();
+    event.currentTarget
+      .closest(".form-grid")
+      ?.scrollBy({ top: event.deltaY, behavior: "auto" });
+  }
+  function reviewInvoiceTotal() {
+    const body = document.querySelector<HTMLElement>(
+      ".invoice-modal > .form-grid",
+    );
+    body?.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+  }
   const saleSubtotal = saleLines.reduce(
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0),
     0,
@@ -1171,6 +1184,7 @@ export default function Home() {
                         type="number"
                         min="0.001"
                         step="0.001"
+                        onWheel={wheelNumberInput}
                         value={line.quantity}
                         onChange={(e) =>
                           updateSaleLine(index, {
@@ -1183,6 +1197,7 @@ export default function Home() {
                         type="number"
                         min="0"
                         step="0.01"
+                        onWheel={wheelNumberInput}
                         value={line.rate}
                         onChange={(e) =>
                           updateSaleLine(index, {
@@ -1232,6 +1247,7 @@ export default function Home() {
                           type="number"
                           min="0"
                           max="100"
+                          onWheel={wheelNumberInput}
                           value={discountPercent}
                           onChange={(e) =>
                             setDiscountPercent(Number(e.target.value))
@@ -1246,6 +1262,7 @@ export default function Home() {
                         <input
                           type="number"
                           min="0"
+                          onWheel={wheelNumberInput}
                           value={taxPercent}
                           onChange={(e) =>
                             setTaxPercent(Number(e.target.value))
@@ -1276,6 +1293,7 @@ export default function Home() {
                     Amount (Nu.)
                     <input
                       type="number"
+                      onWheel={wheelNumberInput}
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                       placeholder="0.00"
@@ -1313,6 +1331,14 @@ export default function Home() {
               </strong>
             </div>
             <div className="modal-actions">
+              {(modal === "sale" || modal === "purchase") && (
+                <button className="review-total" onClick={reviewInvoiceTotal}>
+                  <span>Review total ↓</span>
+                  <strong>
+                    {money(modal === "purchase" ? saleSubtotal : saleGrand)}
+                  </strong>
+                </button>
+              )}
               <button onClick={() => setModal(null)}>Cancel</button>
               <button
                 className="primary"
