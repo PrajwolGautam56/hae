@@ -7,8 +7,72 @@
 }
 
 .modal.invoice-modal {
-  height: min(860px, calc(100dvh - 32px));
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-height: none;
+  max-width: none;
+  border-radius: 0;
+  display: block;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #f7f8fa;
 }
+
+.invoice-modal > .modal-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(255,255,255,.96);
+  backdrop-filter: blur(16px);
+  padding: 15px max(24px,calc((100vw - 1180px)/2));
+  box-shadow: 0 1px 12px rgba(16,24,40,.06);
+}
+.invoice-modal > .form-grid {
+  display: grid;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px;
+  overflow: visible;
+  min-height: auto;
+}
+.invoice-modal > .balance-note {
+  max-width: 1136px;
+  margin: 0 auto 12px;
+}
+.invoice-modal > .modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 12px max(24px,calc((100vw - 1180px)/2));
+  background: rgba(255,255,255,.97);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid #e4e7ec;
+}
+.invoice-section-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e4e7ec;
+}
+.invoice-section-title > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #eaf2ff;
+  color: #175cd3;
+  font-size: 10px;
+  font-weight: 800;
+}
+.invoice-section-title strong,.invoice-section-title small { display:block; }
+.invoice-section-title strong { color:#182230;font-size:14px; }
+.invoice-section-title small { color:#7b8798;font-size:10px;margin-top:2px; }
 
 .modal > .modal-head { flex: 0 0 auto; }
 
@@ -64,7 +128,15 @@
     max-height: calc(100dvh - 8px);
     border-radius: 18px 18px 0 0;
   }
-  .modal.invoice-modal { height: calc(100dvh - 8px); }
+  .modal.invoice-modal {
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+  .invoice-modal > .modal-head { padding: 13px 16px; }
+  .invoice-modal > .form-grid { padding: 16px 14px 28px; }
+  .invoice-modal > .balance-note { margin: 0 14px 10px; }
+  .invoice-modal > .modal-actions { padding: 10px 14px max(10px,env(safe-area-inset-bottom)); }
   .modal > .modal-head {
     position: relative;
     top: auto;
@@ -83,4 +155,40 @@
     flex: 0 0 100%;
   }
   .modal > .modal-actions { flex-wrap: wrap; }
+}
+
+/* Invoice workspace wins over the compact modal rules above. */
+.modal.invoice-modal > .modal-head {
+  position: sticky;
+  top: 0;
+  margin: 0;
+}
+.modal.invoice-modal > .form-grid {
+  display: grid;
+  flex: none;
+  min-height: auto;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px;
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+.modal.invoice-modal > .balance-note {
+  max-width: 1136px;
+  margin: 0 auto 12px;
+}
+.modal.invoice-modal > .modal-actions {
+  position: sticky;
+  bottom: 0;
+  margin: 0;
+  padding: 12px max(24px,calc((100vw - 1180px)/2));
+}
+@media (max-width:760px) {
+  .modal.invoice-modal > .modal-head { padding: 13px 16px; }
+  .modal.invoice-modal > .form-grid { padding: 16px 14px 28px; }
+  .modal.invoice-modal > .balance-note { margin: 0 14px 10px; }
+  .modal.invoice-modal > .modal-actions {
+    margin: 0;
+    padding: 10px 14px max(10px,env(safe-area-inset-bottom));
+  }
 }

@@ -318,12 +318,12 @@ export default function Home() {
     event.preventDefault();
     event.currentTarget.blur();
     event.currentTarget
-      .closest(".form-grid")
+      .closest(".invoice-modal, .form-grid")
       ?.scrollBy({ top: event.deltaY, behavior: "auto" });
   }
   function reviewInvoiceTotal() {
     const body = document.querySelector<HTMLElement>(
-      ".invoice-modal > .form-grid",
+      ".invoice-modal",
     );
     body?.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
   }
@@ -1095,6 +1095,9 @@ export default function Home() {
             <div className="form-grid">
               {modal !== "expense" && (
                 <>
+                  {(modal === "sale" || modal === "purchase") && (
+                    <div className="invoice-section-title full"><span>01</span><div><strong>{modal === "sale" ? "Customer details" : "Supplier details"}</strong><small>Select an existing party or create one instantly.</small></div></div>
+                  )}
                   <label className="full">
                     {modal === "purchase"
                       ? "Supplier / Party"
@@ -1146,6 +1149,9 @@ export default function Home() {
                   placeholder="Auto numbering · starts at 0001 each FY"
                 />
               </label>
+              {(modal === "sale" || modal === "purchase") && (
+                <div className="invoice-section-title full"><span>02</span><div><strong>Items & pricing</strong><small>Add products, quantity and rate. Scroll normally for totals.</small></div></div>
+              )}
               {modal === "sale" || modal === "purchase" ? (
                 <div className="invoice-builder full">
                   <div className="line-head">
