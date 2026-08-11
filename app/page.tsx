@@ -174,6 +174,10 @@ export default function Home() {
       setNotice("Please enter a valid amount");
       return;
     }
+    if (modal === "payment" && !party && !newPartyName.trim()) {
+      setNotice("Please select a party or add a new party");
+      return;
+    }
     setSaving(true);
     const response = await fetch("/api/accounting", {
       method: "POST",
@@ -238,15 +242,28 @@ export default function Home() {
   }
   function openSale() {
     setModal("sale");
+    setFormParty(parties[0]?.name || "__new__");
     setSaleLines([emptySaleLine()]);
     setNewPartyName("");
+    setPlace(""); setPhone(""); setTaxNo("");
+  }
+  function openPayment() {
+    setModal("payment");
+    setFormParty(parties[0]?.name || "__new__");
+    setNewPartyName(""); setAmount(""); setParticulars("");
+    setPlace(""); setPhone(""); setTaxNo("");
   }
   function openModuleModal(kind: "purchase" | "expense" | "party" | "product") {
     setModal(kind);
     setAmount("");
     setParticulars("");
     setEntityName("");
-    if (kind === "purchase") setSaleLines([emptySaleLine()]);
+    if (kind === "purchase") {
+      setSaleLines([emptySaleLine()]);
+      setFormParty(parties[0]?.name || "__new__");
+      setNewPartyName("");
+      setPlace(""); setPhone(""); setTaxNo("");
+    }
   }
   function updateSaleLine(index: number, patch: Partial<SaleLine>) {
     setSaleLines((lines) =>
@@ -281,6 +298,14 @@ export default function Home() {
   const salesTransactions = transactions.filter(
     (t) => t.type === "Sales Invoice",
   );
+  const stockValue = products.reduce(
+    (sum, product) =>
+      sum + Number(product.stock_qty || 0) * Number(product.purchase_price || 0),
+    0,
+  );
+  const lowStockCount = products.filter(
+    (product) => Number(product.stock_qty) <= Number(product.low_stock_at),
+  ).length;
   const nextInvoice = String(
     Math.max(0, ...salesTransactions.map((t) => Number(t.sequence_no) || 0)) +
       1,
@@ -309,7 +334,7 @@ export default function Home() {
             >
               <i>{["⌂", "↗", "↙", "⇄", "♙", "▦", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
               {item}
-              {item === "Inventory" && <b>12</b>}
+              {item === "Inventory" && lowStockCount > 0 && <b>{lowStockCount}</b>}
             </button>
           ))}
         </nav>
@@ -346,6 +371,7 @@ export default function Home() {
               <strong>{company.name}</strong>
               <small>FY {fiscalYear?.label_bs || "2083/84"} · BTN</small>
             </div>
+            <strong className="mobile-page-title">{active}</strong>
           </div>
           <div className="fy-tools">
             <select
@@ -486,9 +512,9 @@ export default function Home() {
                     <button>•••</button>
                   </div>
                   <p>STOCK VALUE</p>
-                  <h2>Nu. 4,210,600</h2>
+                  <h2>{money(stockValue)}</h2>
                   <small>
-                    <mark className="redmark">12 items</mark> low in stock
+                    <mark className="redmark">{lowStockCount} items</mark> low in stock
                   </small>
                   <div className="spark violet-spark">
                     <i></i>
@@ -574,7 +600,7 @@ export default function Home() {
                     <button
                       disabled={fiscalYear?.status === "closed"}
                       onClick={() =>
-                        fiscalYear?.status !== "closed" && setModal("payment")
+                        fiscalYear?.status !== "closed" && openPayment()
                       }
                     >
                       <i className="qa-green">↓</i>
@@ -688,7 +714,7 @@ export default function Home() {
                         onClick={() => {
                           if (fiscalYear?.status === "closed") return;
                           setFormParty(p.name);
-                          setModal("payment");
+                          openPayment();
                         }}
                       >
                         <span className={`avatar ${p.tone}`}>{p.initials}</span>
@@ -851,7 +877,7 @@ export default function Home() {
                 {active === "Payments" && (
                   <button
                     className="primary"
-                    onClick={() => setModal("payment")}
+                    onClick={openPayment}
                   >
                     ＋ Receive payment
                   </button>
@@ -1040,15 +1066,13 @@ export default function Home() {
                     </select>
                   </label>
                   {formParty === "__new__" && (
-                    <label className="full">
-                      New party name
-                      <input
-                        autoFocus
-                        value={newPartyName}
-                        onChange={(e) => setNewPartyName(e.target.value)}
-                        placeholder="Type customer / company name"
-                      />
-                    </label>
+                    <div className="inline-party full">
+                      <div className="inline-party-title"><strong>New party details</strong><span>Name is required; other details are optional.</span></div>
+                      <label>Party / company name<input autoFocus value={newPartyName} onChange={(e) => setNewPartyName(e.target.value)} placeholder="Required" /></label>
+                      <label>Phone<input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" /></label>
+                      <label>Address<input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Optional" /></label>
+                      <label>PAN Number<input value={taxNo} onChange={(e) => setTaxNo(e.target.value)} placeholder="Optional" /></label>
+                    </div>
                   )}
                 </>
               )}
@@ -1400,6 +1424,12 @@ export default function Home() {
           onClick={() => setSidebarOpen(false)}
         />
       )}
+      <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
+        {[["Overview","⌂"],["Sales","↗"],["Payments","⇄"],["Parties","♙"]].map(([item,icon]) => (
+          <button key={item} className={active===item?"active":""} onClick={()=>setActive(item)}><i>{icon}</i><span>{item}</span></button>
+        ))}
+        <button onClick={()=>setSidebarOpen(true)}><i>☰</i><span>More</span></button>
+      </nav>
     </main>
   );
 }

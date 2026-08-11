@@ -214,6 +214,9 @@ export async function POST(request: Request) {
             company_id: state.company.id,
             name: String(body.partyName),
             place: String(body.place || ""),
+            phone: String(body.phone || ""),
+            tax_no: String(body.taxNo || "") || null,
+            party_type: type === "purchase" ? "supplier" : "customer",
           },
           { onConflict: "company_id,name" },
         )
