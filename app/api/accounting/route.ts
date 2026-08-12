@@ -144,6 +144,24 @@ async function snapshot(requestedFy?: string) {
 
 export async function GET(request: Request) {
   try {
+    const voucherId = new URL(request.url).searchParams.get("voucherId");
+    if (voucherId) {
+      const supabase = getSupabaseAdmin();
+      if (!supabase) throw new Error("Supabase server configuration is missing");
+      const { data: voucher, error: voucherError } = await supabase
+        .from("vouchers")
+        .select("id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,parties(name,place,phone,tax_no),fiscal_years(label_bs)")
+        .eq("id", voucherId)
+        .single();
+      if (voucherError) throw voucherError;
+      const { data: lines, error: lineError } = await supabase
+        .from("voucher_lines")
+        .select("id,description,quantity,rate,amount,inventory_item,products(name,sku,unit)")
+        .eq("voucher_id", voucherId)
+        .order("id");
+      if (lineError) throw lineError;
+      return NextResponse.json({ ...voucher, lines: lines || [] });
+    }
     return NextResponse.json(
       await snapshot(new URL(request.url).searchParams.get("fy") || undefined),
     );

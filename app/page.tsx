@@ -111,6 +111,8 @@ export default function Home() {
   const [openingBalance, setOpeningBalance] = useState("");
   const [openingSide, setOpeningSide] = useState<"debit" | "credit">("debit");
   const [transactionDate, setTransactionDate] = useState(today);
+  const [voucherDetail, setVoucherDetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [reportPartyId, setReportPartyId] = useState("");
   const fiscalRequest = useRef(0);
   const visibleParties = useMemo(
@@ -343,6 +345,21 @@ export default function Home() {
       ".invoice-modal",
     );
     body?.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+  }
+  async function openVoucherDetail(id: string) {
+    setDetailLoading(true);
+    setVoucherDetail({ id });
+    try {
+      const response = await fetch(`/api/accounting?voucherId=${encodeURIComponent(id)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load voucher details");
+      setVoucherDetail(data);
+    } catch (error) {
+      setVoucherDetail(null);
+      setNotice(error instanceof Error ? error.message : "Could not load voucher details");
+    } finally {
+      setDetailLoading(false);
+    }
   }
   const saleSubtotal = saleLines.reduce(
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0),
@@ -842,7 +859,7 @@ export default function Home() {
                     <tbody>
                       {salesTransactions.length ? (
                         salesTransactions.map((t) => (
-                          <tr key={t.id}>
+                          <tr key={t.id} className="clickable-voucher" tabIndex={0} onClick={() => openVoucherDetail(t.id)} onKeyDown={(e) => e.key === "Enter" && openVoucherDetail(t.id)}>
                             <td>
                               <strong>{t.sequence_no}</strong>
                             </td>
@@ -1039,7 +1056,7 @@ export default function Home() {
                                   : true,
                           )
                           .map((t) => (
-                            <tr key={t.id}>
+                            <tr key={t.id} className="clickable-voucher" tabIndex={0} onClick={() => openVoucherDetail(t.id)} onKeyDown={(e) => e.key === "Enter" && openVoucherDetail(t.id)}>
                               <td>
                                 <strong>{t.ref}</strong>
                               </td>
@@ -1061,6 +1078,39 @@ export default function Home() {
           )}
         </div>
       </section>
+
+      {voucherDetail && (
+        <div className="modal-backdrop" onMouseDown={() => setVoucherDetail(null)}>
+          <section className="modal voucher-detail-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <small>{voucherDetail.voucher_type === "sale" ? "SALES INVOICE" : voucherDetail.voucher_type === "receipt" ? "PAYMENT RECEIPT" : "VOUCHER"} · FY {voucherDetail.fiscal_years?.label_bs || fiscalYear?.label_bs}</small>
+                <h2>{detailLoading ? "Loading details…" : `${voucherDetail.voucher_type === "sale" ? "Invoice" : voucherDetail.voucher_type === "receipt" ? "Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`}</h2>
+              </div>
+              <button aria-label="Close voucher details" onClick={() => setVoucherDetail(null)}>×</button>
+            </div>
+            {!detailLoading && (
+              <div className="voucher-document">
+                <div className="voucher-company">
+                  <img src="/hamro-afno-logo.jpeg" alt="" />
+                  <div><strong>{company.name}</strong><span>Official accounting record</span></div>
+                  <div className="voucher-status"><span>POSTED</span><small>{voucherDetail.voucher_date ? bsDate(voucherDetail.voucher_date) : ""}</small></div>
+                </div>
+                <div className="voucher-meta">
+                  <div><small>PARTY / CUSTOMER</small><strong>{voucherDetail.parties?.name || "Cash / General"}</strong><span>{[voucherDetail.parties?.place, voucherDetail.parties?.phone, voucherDetail.parties?.tax_no ? `PAN ${voucherDetail.parties.tax_no}` : ""].filter(Boolean).join(" · ") || "No additional details"}</span></div>
+                  <div><small>DATE</small><strong>{calendar === "BS" ? bsDate(voucherDetail.voucher_date) : adDate(voucherDetail.voucher_date)}</strong><span>AD {adDate(voucherDetail.voucher_date)}</span></div>
+                  <div><small>{voucherDetail.voucher_type === "receipt" ? "RECEIPT NO." : "INVOICE NO."}</small><strong>{voucherDetail.sequence_no || voucherDetail.voucher_no}</strong><span>FY {voucherDetail.fiscal_years?.label_bs}</span></div>
+                </div>
+                {voucherDetail.lines?.length > 0 && <div className="voucher-lines"><table><thead><tr><th>#</th><th>PRODUCT / DESCRIPTION</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>{voucherDetail.lines.map((line:any,index:number)=><tr key={line.id}><td>{index+1}</td><td><strong>{line.description || line.products?.name}</strong><small>{[line.products?.sku,line.products?.unit].filter(Boolean).join(" · ")}</small></td><td>{Number(line.quantity).toLocaleString()}</td><td>{money(Number(line.rate))}</td><td><strong>{money(Number(line.amount))}</strong></td></tr>)}</tbody></table></div>}
+                {voucherDetail.voucher_type === "receipt" && <div className="receipt-panel"><div><small>AMOUNT RECEIVED</small><strong>{money(Number(voucherDetail.total))}</strong></div><div><small>PAYMENT MODE</small><strong>{voucherDetail.payment_mode || "Cash"}</strong></div>{voucherDetail.payment_mode === "Cheque" && <><div><small>CHEQUE / BANK</small><strong>{voucherDetail.cheque_no || "—"} · {voucherDetail.cheque_bank || "—"}</strong></div><div><small>CLEARANCE DATE</small><strong>{voucherDetail.cheque_exchange_date ? adDate(voucherDetail.cheque_exchange_date) : "—"}</strong><span className={`cheque-status ${voucherDetail.cheque_status}`}>{voucherDetail.cheque_status}</span></div></>}</div>}
+                {voucherDetail.voucher_type === "sale" && <div className="voucher-totals"><div><span>Subtotal</span><strong>{money(Number(voucherDetail.subtotal))}</strong></div><div><span>Discount ({Number(voucherDetail.discount_percent)}%)</span><strong>− {money(Number(voucherDetail.discount_amount))}</strong></div><div><span>VAT / Tax ({Number(voucherDetail.tax_percent)}%)</span><strong>＋ {money(Number(voucherDetail.tax_amount))}</strong></div><div className="grand"><span>Grand total</span><strong>{money(Number(voucherDetail.total))}</strong></div></div>}
+                {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
+              </div>
+            )}
+            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button><button className="primary" onClick={() => window.print()}>Print / PDF</button></div>
+          </section>
+        </div>
+      )}
 
       {modal && !["party", "product"].includes(modal) && (
         <div className="modal-backdrop" onMouseDown={() => setModal(null)}>

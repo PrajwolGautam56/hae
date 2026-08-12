@@ -155,6 +155,8 @@ th { height:42px;padding:11px 18px;background:rgba(248,250,252,.8);color:#667085
 td { height:52px;padding:11px 18px;border-color:rgba(148,163,184,.15); }
 tbody tr { transition:background .15s ease; }
 tbody tr:hover td { background:rgba(239,246,255,.62); }
+.clickable-voucher { cursor:pointer; }
+.clickable-voucher td:first-child strong { color:#1d4ed8; }
 td strong { font-size:10px; }
 .search { height:40px;margin:14px 16px;border-radius:11px;background:rgba(255,255,255,.75); }
 .party-list button { min-height:56px;border-radius:12px;background:transparent; }
@@ -180,6 +182,21 @@ td strong { font-size:10px; }
 .balance-note { border:1px solid #fde7b2;border-radius:12px; }
 .modal-actions { border-color:rgba(148,163,184,.2);background:rgba(255,255,255,.9);backdrop-filter:blur(18px); }
 .modal-actions>button:not(.primary) { min-height:42px;border-radius:11px;color:#344054;font-weight:650; }
+.voucher-detail-modal { width:min(920px,calc(100% - 28px));max-height:92dvh; }
+.voucher-document { padding:26px;overflow:auto; }
+.voucher-company { display:grid;grid-template-columns:52px 1fr auto;gap:13px;align-items:center;padding-bottom:20px;border-bottom:1px solid var(--line); }
+.voucher-company img { width:52px;height:52px;object-fit:cover;border-radius:13px; }
+.voucher-company strong,.voucher-company span,.voucher-company small { display:block; }
+.voucher-company strong { font-size:17px; }.voucher-company span { margin-top:3px;color:#667085;font-size:11px; }
+.voucher-status { text-align:right; }.voucher-status>span { display:inline-flex;padding:6px 10px;border-radius:999px;background:#dcfce7;color:#15803d;font-size:9px;font-weight:800; }.voucher-status small { margin-top:6px;color:#667085; }
+.voucher-meta { display:grid;grid-template-columns:1.5fr 1fr .7fr;gap:18px;padding:22px 0; }
+.voucher-meta>div { padding:16px;border:1px solid var(--line);border-radius:14px;background:#f8fafc; }.voucher-meta small,.receipt-panel small,.voucher-note small { display:block;color:#667085;font-size:9px;font-weight:800;letter-spacing:.08em; }.voucher-meta strong { display:block;margin:7px 0 4px;font-size:13px; }.voucher-meta span { color:#667085;font-size:10px; }
+.voucher-lines { border:1px solid var(--line);border-radius:14px;overflow:hidden; }.voucher-lines table { min-width:680px; }.voucher-lines td:first-child { display:table-cell; }.voucher-lines td:nth-last-child(-n+3),.voucher-lines th:nth-last-child(-n+3) { text-align:right; }
+.voucher-totals { width:min(380px,100%);margin:18px 0 0 auto;padding:15px 18px;border:1px solid var(--line);border-radius:14px;background:#f8fafc; }.voucher-totals>div { display:flex;justify-content:space-between;padding:7px 0;font-size:11px; }.voucher-totals .grand { margin-top:6px;padding-top:13px;border-top:2px solid #dbe3ee;font-size:15px; }.voucher-totals .grand strong { color:#1d4ed8;font-size:19px; }
+.receipt-panel { display:grid;grid-template-columns:repeat(2,1fr);gap:14px; }.receipt-panel>div { padding:18px;border:1px solid var(--line);border-radius:14px;background:#f8fafc; }.receipt-panel strong { display:block;margin-top:8px;font-size:15px; }.receipt-panel .cheque-status { display:inline-flex;margin-top:8px; }
+.voucher-note { margin-top:18px;padding:15px;border-left:3px solid #60a5fa;background:#eff6ff;border-radius:0 12px 12px 0; }.voucher-note p { margin:7px 0 0;color:#344054; }
+@media(max-width:760px){.voucher-detail-modal{width:100%;max-height:96dvh}.voucher-document{padding:18px}.voucher-meta,.receipt-panel{grid-template-columns:1fr}.voucher-company{grid-template-columns:44px 1fr}.voucher-company img{width:44px;height:44px}.voucher-status{grid-column:1/-1;text-align:left}.voucher-lines{overflow:auto}}
+@media print{.voucher-detail-modal{width:100%;max-height:none;box-shadow:none;border:0}.voucher-detail-modal>.modal-head,.voucher-detail-modal>.modal-actions{display:none!important}.voucher-document{overflow:visible;padding:0}.modal-backdrop{position:static;background:#fff;padding:0}.app-shell{display:none!important}}
 
 /* Invoice workspace */
 .modal.invoice-modal { background:linear-gradient(145deg,#f8fafc,#eef3f8); }
