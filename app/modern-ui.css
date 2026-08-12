@@ -171,6 +171,7 @@ td strong { font-size:10px; }
 .modal-head button:hover { background:#f1f5f9;color:#101828; }
 .form-grid { gap:18px;padding:24px; }
 .form-grid label { font-size:11px;color:#475467; }
+.date-conversion { display:block;margin-top:6px;color:#667085;font-size:10px;font-weight:550; }
 .form-grid input,.form-grid select,.crm-modal textarea,.admin-login input,.add-user-card input,.add-user-card select {
   height:46px;border:1px solid #d8dee8;border-radius:12px;background:rgba(255,255,255,.92);box-shadow:0 1px 2px rgba(15,23,42,.025);padding-inline:13px;
 }

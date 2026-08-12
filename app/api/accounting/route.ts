@@ -169,7 +169,10 @@ export async function POST(request: Request) {
           { error: "Party name is required" },
           { status: 400 },
         );
-      const { error } = await supabase.from("parties").upsert(
+      const openingBalance = Number(body.openingBalance || 0);
+      if (!Number.isFinite(openingBalance))
+        return NextResponse.json({ error: "Opening balance must be a valid number" }, { status: 400 });
+      const { data: party, error } = await supabase.from("parties").upsert(
         {
           company_id: initialState.company.id,
           name,
@@ -177,10 +180,22 @@ export async function POST(request: Request) {
           phone: String(body.phone || ""),
           tax_no: String(body.taxNo || "") || null,
           party_type: String(body.partyType || "both"),
+          opening_balance: openingBalance,
         },
         { onConflict: "company_id,name" },
-      );
+      ).select("id").single();
       if (error) throw error;
+      const { error: openingError } = await supabase
+        .from("party_opening_balances")
+        .upsert(
+          { fiscal_year_id: initialState.fiscalYear.id, party_id: party.id, amount: openingBalance },
+          { onConflict: "fiscal_year_id,party_id" },
+        );
+      if (openingError) throw openingError;
+      await supabase.rpc("refresh_future_opening_balances", {
+        p_company_id: initialState.company.id,
+        p_from_fiscal_year_id: initialState.fiscalYear.id,
+      });
       return NextResponse.json(await snapshot(initialState.fiscalYear.id), {
         status: 201,
       });
@@ -251,6 +266,14 @@ export async function POST(request: Request) {
       if (error) throw error;
       partyId = data.id;
     }
+    const historicalYear = state.fiscalYear.status === "closed";
+    if (historicalYear) {
+      const { error: modeError } = await supabase
+        .from("fiscal_years")
+        .update({ status: "open" })
+        .eq("id", state.fiscalYear.id);
+      if (modeError) throw modeError;
+    }
     const result =
       type === "purchase"
         ? await supabase.rpc("record_purchase_bill", {
@@ -288,6 +311,13 @@ export async function POST(request: Request) {
                 ? String(body.paymentMode)
                 : null,
             });
+    if (historicalYear) {
+      const { error: restoreError } = await supabase
+        .from("fiscal_years")
+        .update({ status: "closed" })
+        .eq("id", state.fiscalYear.id);
+      if (restoreError) throw restoreError;
+    }
     if (result.error) throw result.error;
     if (type === "payment" && String(body.paymentMode) === "Cheque") {
       const voucherId = (result.data as any)?.id;
@@ -307,6 +337,10 @@ export async function POST(request: Request) {
       );
       if (bankError) throw bankError;
     }
+    await supabase.rpc("refresh_future_opening_balances", {
+      p_company_id: state.company.id,
+      p_from_fiscal_year_id: state.fiscalYear.id,
+    });
     return NextResponse.json(await snapshot(state.fiscalYear.id), {
       status: 201,
     });

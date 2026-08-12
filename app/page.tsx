@@ -108,6 +108,9 @@ export default function Home() {
   const [salePrice, setSalePrice] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
   const [openingStock, setOpeningStock] = useState("");
+  const [openingBalance, setOpeningBalance] = useState("");
+  const [openingSide, setOpeningSide] = useState<"debit" | "credit">("debit");
+  const [transactionDate, setTransactionDate] = useState(today);
   const [reportPartyId, setReportPartyId] = useState("");
   const fiscalRequest = useRef(0);
   const visibleParties = useMemo(
@@ -170,7 +173,11 @@ export default function Home() {
   async function changeFiscalYear(id: string) {
     const request = ++fiscalRequest.current;
     const data = await fetch(`/api/accounting?fy=${id}`).then((r) => r.json());
-    if (request === fiscalRequest.current) applySnapshot(data);
+    if (request === fiscalRequest.current) {
+      applySnapshot(data);
+      const inYear = today >= data.fiscalYear.start_ad && today <= data.fiscalYear.end_ad;
+      setTransactionDate(inYear ? today : data.fiscalYear.end_ad);
+    }
   }
 
   async function save(kind: string) {
@@ -220,7 +227,7 @@ export default function Home() {
         chequeNo,
         chequeBank,
         chequeExchangeDate,
-        date: today,
+        date: transactionDate,
         fiscalYearId: fiscalYear?.id,
         lines: validLines.map((l) => ({
           product_id: l.productId || null,
@@ -236,6 +243,8 @@ export default function Home() {
         salePrice: Number(salePrice || 0),
         purchasePrice: Number(purchasePrice || 0),
         openingStock: Number(openingStock || 0),
+        openingBalance:
+          Number(openingBalance || 0) * (openingSide === "credit" ? -1 : 1),
         place,
         phone,
         taxNo,
@@ -264,6 +273,8 @@ export default function Home() {
     setSalePrice("");
     setPurchasePrice("");
     setOpeningStock("");
+    setOpeningBalance("");
+    setOpeningSide("debit");
     setNotice(`${kind} saved in local database`);
     refreshChequeCounts();
     window.setTimeout(() => setNotice(""), 2600);
@@ -274,6 +285,7 @@ export default function Home() {
     setSaleLines([emptySaleLine()]);
     setNewPartyName("");
     setPlace(""); setPhone(""); setTaxNo("");
+    setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
   }
   function openPayment() {
     setModal("payment");
@@ -281,12 +293,15 @@ export default function Home() {
     setNewPartyName(""); setAmount(""); setParticulars("");
     setPaymentMode("Cash"); setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
     setPlace(""); setPhone(""); setTaxNo("");
+    setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
   }
   function openModuleModal(kind: "purchase" | "expense" | "party" | "product") {
     setModal(kind);
     setAmount("");
     setParticulars("");
     setEntityName("");
+    setOpeningBalance(""); setOpeningSide("debit");
+    setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
     if (kind === "purchase") {
       setSaleLines([emptySaleLine()]);
       setFormParty(parties[0]?.name || "__new__");
@@ -443,8 +458,7 @@ export default function Home() {
             {active === "Overview" && (
               <button
                 className="primary"
-                disabled={fiscalYear?.status === "closed"}
-                onClick={() => fiscalYear?.status !== "closed" && openSale()}
+                onClick={openSale}
               >
                 ＋ New Transaction
               </button>
@@ -467,9 +481,7 @@ export default function Home() {
             </div>
             <div className="title-actions">
               <span className={`year-status ${fiscalYear?.status}`}>
-                {fiscalYear?.status === "closed"
-                  ? "Closed year"
-                  : "Current year"}
+                {fiscalYear?.status === "closed" ? "Historical year" : "Current year"}
               </span>
               <button
                 className="date-pill"
@@ -631,10 +643,7 @@ export default function Home() {
                   </div>
                   <div className="quick-grid">
                     <button
-                      disabled={fiscalYear?.status === "closed"}
-                      onClick={() =>
-                        fiscalYear?.status !== "closed" && openSale()
-                      }
+                      onClick={openSale}
                     >
                       <i className="qa-blue">↗</i>
                       <span>
@@ -643,10 +652,7 @@ export default function Home() {
                       </span>
                     </button>
                     <button
-                      disabled={fiscalYear?.status === "closed"}
-                      onClick={() =>
-                        fiscalYear?.status !== "closed" && openPayment()
-                      }
+                      onClick={openPayment}
                     >
                       <i className="qa-green">↓</i>
                       <span>
@@ -755,9 +761,7 @@ export default function Home() {
                     {visibleParties.map((p) => (
                       <button
                         key={p.name}
-                        disabled={fiscalYear?.status === "closed"}
                         onClick={() => {
-                          if (fiscalYear?.status === "closed") return;
                           setFormParty(p.name);
                           openPayment();
                         }}
@@ -791,7 +795,6 @@ export default function Home() {
                 </div>
                 <button
                   className="primary"
-                  disabled={fiscalYear?.status === "closed"}
                   onClick={openSale}
                 >
                   ＋ Add sales invoice
@@ -1128,16 +1131,15 @@ export default function Home() {
                 </>
               )}
               <label>
-                Date ({calendar})
-                {calendar === "BS" ? (
-                  <input
-                    type="text"
-                    readOnly
-                    value={clientToday ? bsDate(clientToday) : ""}
-                  />
-                ) : (
-                  <input type="date" defaultValue={today} />
-                )}
+                Transaction date (AD)
+                <input
+                  type="date"
+                  min={fiscalYear?.start_ad}
+                  max={fiscalYear?.end_ad}
+                  value={transactionDate}
+                  onChange={(e) => setTransactionDate(e.target.value)}
+                />
+                <small className="date-conversion">BS: {transactionDate ? bsDate(transactionDate) : "—"}</small>
               </label>
               <label>
                 {modal === "sale"
@@ -1436,6 +1438,24 @@ export default function Home() {
                       onChange={(e) => setTaxNo(e.target.value)}
                       placeholder="PAN / Tax ID"
                     />
+                  </label>
+                  <label>
+                    Opening balance · FY {fiscalYear?.label_bs}
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={openingBalance}
+                      onChange={(e) => setOpeningBalance(e.target.value)}
+                      placeholder="0.00"
+                    />
+                  </label>
+                  <label>
+                    Balance side
+                    <select value={openingSide} onChange={(e) => setOpeningSide(e.target.value as "debit" | "credit")}>
+                      <option value="debit">Debit · Party owes us</option>
+                      <option value="credit">Credit · We owe party</option>
+                    </select>
                   </label>
                 </>
               ) : (
