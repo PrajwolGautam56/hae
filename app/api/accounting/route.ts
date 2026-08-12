@@ -38,6 +38,7 @@ async function snapshot(requestedFy?: string) {
     { data: openings, error: openingError },
     { data: vouchers, error: voucherError },
     { data: products, error: productError },
+    { data: sequences, error: sequenceError },
   ] = await Promise.all([
     supabase
       .from("parties")
@@ -65,9 +66,13 @@ async function snapshot(requestedFy?: string) {
       .eq("company_id", company.id)
       .eq("active", true)
       .order("name"),
+    supabase
+      .from("voucher_sequences")
+      .select("voucher_type,last_number")
+      .eq("fiscal_year_id", fiscalYear.id),
   ]);
-  if (partyError || openingError || voucherError || productError)
-    throw partyError || openingError || voucherError || productError;
+  if (partyError || openingError || voucherError || productError || sequenceError)
+    throw partyError || openingError || voucherError || productError || sequenceError;
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
   );
@@ -128,6 +133,12 @@ async function snapshot(requestedFy?: string) {
     products: products || [],
     transactions,
     totals,
+    nextNumbers: Object.fromEntries(
+      ["sale", "receipt", "purchase", "expense"].map((type) => [
+        type,
+        Number(sequences?.find((row) => row.voucher_type === type)?.last_number || 0) + 1,
+      ]),
+    ),
   };
 }
 

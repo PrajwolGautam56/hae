@@ -81,6 +81,7 @@ export default function Home() {
     received: 0,
     receivable: 0,
   });
+  const [nextNumbers, setNextNumbers] = useState({ sale: 1, receipt: 1, purchase: 1, expense: 1 });
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [chequeNo, setChequeNo] = useState("");
@@ -154,6 +155,7 @@ export default function Home() {
       })),
     );
     setTotals(data.totals);
+    setNextNumbers(data.nextNumbers || { sale: 1, receipt: 1, purchase: 1, expense: 1 });
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
     setProducts(data.products || []);
@@ -346,10 +348,7 @@ export default function Home() {
   const lowStockCount = products.filter(
     (product) => Number(product.stock_qty) <= Number(product.low_stock_at),
   ).length;
-  const nextInvoice = String(
-    Math.max(0, ...salesTransactions.map((t) => Number(t.sequence_no) || 0)) +
-      1,
-  ).padStart(4, "0");
+  const nextInvoice = nextNumbers.sale;
 
   return (
     <main className="app-shell">
@@ -809,13 +808,11 @@ export default function Home() {
                 </article>
                 <article>
                   <small>LAST INVOICE</small>
-                  <strong>{salesTransactions[0]?.ref || "No bill yet"}</strong>
+                  <strong>{salesTransactions[0]?.sequence_no || "No bill yet"}</strong>
                 </article>
                 <article>
                   <small>NEXT NUMBER</small>
-                  <strong>
-                    INV-{fiscalYear?.label_bs}-{nextInvoice}
-                  </strong>
+                  <strong>{nextInvoice}</strong>
                 </article>
               </div>
               <article className="card sales-list">
@@ -844,7 +841,7 @@ export default function Home() {
                         salesTransactions.map((t) => (
                           <tr key={t.id}>
                             <td>
-                              <strong>{t.ref}</strong>
+                              <strong>{t.sequence_no}</strong>
                             </td>
                             <td>
                               {calendar === "BS"
@@ -862,7 +859,7 @@ export default function Home() {
                         <tr>
                           <td colSpan={5} className="empty-year">
                             No sales invoice in this fiscal year. The next
-                            invoice will start at 0001.
+                            invoice will start at 1.
                           </td>
                         </tr>
                       )}
@@ -1143,10 +1140,24 @@ export default function Home() {
                 )}
               </label>
               <label>
-                Reference
+                {modal === "sale"
+                  ? "Invoice number"
+                  : modal === "payment"
+                    ? "Receipt number"
+                    : modal === "purchase"
+                      ? "Purchase number"
+                      : "Expense number"}
                 <input
                   readOnly
-                  placeholder="Auto numbering · starts at 0001 each FY"
+                  value={String(
+                    modal === "sale"
+                      ? nextNumbers.sale
+                      : modal === "payment"
+                        ? nextNumbers.receipt
+                        : modal === "purchase"
+                          ? nextNumbers.purchase
+                          : nextNumbers.expense,
+                  )}
                 />
               </label>
               {(modal === "sale" || modal === "purchase") && (
