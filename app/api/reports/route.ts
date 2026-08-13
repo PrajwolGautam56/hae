@@ -11,6 +11,7 @@ export async function GET(request: Request) {
     const partyId = q.get("partyId");
     const fiscalYearId = q.get("fiscalYearId");
     const reportType = q.get("type") || "daybook";
+    const accountId = q.get("accountId");
     const from = q.get("from");
     const to = q.get("to");
 
@@ -25,6 +26,32 @@ export async function GET(request: Request) {
     const dateFrom = from || fy.start_ad;
     const dateTo = to || fy.end_ad;
     if (dateFrom > dateTo) return NextResponse.json({ error: "From date must be before To date" }, { status: 400 });
+
+    if (reportType === "trial_balance" || reportType === "general_ledger") {
+      const { data: accounts, error: accountsError } = await db.from("accounts").select("id,code,name,account_type,normal_side").eq("company_id", company.id).eq("active", true).order("code");
+      if (accountsError) throw accountsError;
+      let linesQuery = db.from("journal_lines").select("id,account_id,party_id,description,debit,credit,accounts(code,name,account_type),journal_entries!inner(id,entry_date,reference,description,fiscal_year_id)").eq("company_id", company.id).eq("journal_entries.fiscal_year_id", fy.id).gte("journal_entries.entry_date", dateFrom).lte("journal_entries.entry_date", dateTo);
+      if (accountId) linesQuery = linesQuery.eq("account_id", accountId);
+      const { data: periodLines, error: linesError } = await linesQuery;
+      if (linesError) throw linesError;
+      const { data: earlier, error: earlierError } = await db.from("journal_lines").select("account_id,debit,credit,journal_entries!inner(entry_date,fiscal_year_id)").eq("company_id", company.id).eq("journal_entries.fiscal_year_id", fy.id).gte("journal_entries.entry_date", fy.start_ad).lt("journal_entries.entry_date", dateFrom);
+      if (earlierError) throw earlierError;
+      const opening = new Map<string,number>();
+      for (const x of earlier || []) opening.set(x.account_id, (opening.get(x.account_id) || 0) + Number(x.debit) - Number(x.credit));
+
+      if (reportType === "trial_balance") {
+        const period = new Map<string,{debit:number;credit:number}>();
+        for (const x of periodLines || []) { const p=period.get(x.account_id)||{debit:0,credit:0};p.debit+=Number(x.debit);p.credit+=Number(x.credit);period.set(x.account_id,p); }
+        const rows=(accounts || []).map((a:any)=>{const op=opening.get(a.id)||0;const p=period.get(a.id)||{debit:0,credit:0};const close=op+p.debit-p.credit;return {id:a.id,code:a.code,name:a.name,accountType:a.account_type,openingDebit:Math.max(op,0),openingCredit:Math.max(-op,0),debit:p.debit,credit:p.credit,closingDebit:Math.max(close,0),closingCredit:Math.max(-close,0)}}).filter((x:any)=>x.openingDebit||x.openingCredit||x.debit||x.credit);
+        const totals=rows.reduce((s:any,x:any)=>({openingDebit:s.openingDebit+x.openingDebit,openingCredit:s.openingCredit+x.openingCredit,debit:s.debit+x.debit,credit:s.credit+x.credit,closingDebit:s.closingDebit+x.closingDebit,closingCredit:s.closingCredit+x.closingCredit}),{openingDebit:0,openingCredit:0,debit:0,credit:0,closingDebit:0,closingCredit:0});
+        return NextResponse.json({company,fiscalYear:fy,from:dateFrom,to:dateTo,reportType,accounts,totals,rows,balanced:Math.abs(totals.closingDebit-totals.closingCredit)<0.01});
+      }
+
+      let running=accountId ? (opening.get(accountId)||0) : 0;
+      const rows=(periodLines || []).sort((a:any,b:any)=>String(a.journal_entries.entry_date).localeCompare(String(b.journal_entries.entry_date))).map((x:any)=>{running+=Number(x.debit)-Number(x.credit);return {id:x.id,date:x.journal_entries.entry_date,ref:x.journal_entries.reference,accountId:x.account_id,accountCode:x.accounts?.code,accountName:x.accounts?.name,particulars:x.description||x.journal_entries.description||"—",debit:Number(x.debit),credit:Number(x.credit),balance:accountId?running:null}});
+      const totals=rows.reduce((s:any,x:any)=>({debit:s.debit+x.debit,credit:s.credit+x.credit}),{debit:0,credit:0});
+      return NextResponse.json({company,fiscalYear:fy,from:dateFrom,to:dateTo,reportType,accounts,opening:accountId?(opening.get(accountId)||0):null,closing:accountId?running:null,totals,rows});
+    }
 
     let voucherQuery = db.from("vouchers").select("id,voucher_no,voucher_type,voucher_date,narration,payment_mode,subtotal,discount_amount,tax_amount,total,party_id,parties(name),ledger_entries(debit,credit,account_name)").eq("company_id", company.id).eq("fiscal_year_id", fy.id).gte("voucher_date", dateFrom).lte("voucher_date", dateTo).order("voucher_date").order("created_at");
     if (partyId) voucherQuery = voucherQuery.eq("party_id", partyId);
