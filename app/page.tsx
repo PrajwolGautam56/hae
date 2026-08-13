@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import { formatBs } from "../lib/nepali-date";
+import { downloadCsv, printDocument } from "../lib/export-data";
 import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
 import ChequeWorkspace from "./cheque-workspace";
@@ -439,6 +440,11 @@ export default function Home() {
     (product) => Number(product.stock_qty) <= Number(product.low_stock_at),
   ).length;
   const nextInvoice = nextNumbers.sale;
+  async function exportModule(module:string){
+    if(module==="Inventory"||module==="Stock"){const rows=products.filter(p=>module==="Inventory"?["raw_material","packaging"].includes(p.item_type):["finished_good","resale_good"].includes(p.item_type));downloadCsv(`${module}-FY-${fiscalYear?.label_bs}`,rows,[{label:"SKU",value:(r:any)=>r.sku},{label:"Product",value:(r:any)=>r.name},{label:"Type",value:(r:any)=>r.item_type},{label:"Unit",value:(r:any)=>r.unit},{label:"Purchase price",value:(r:any)=>r.purchase_price},{label:"Sale price",value:(r:any)=>r.sale_price},{label:"Stock quantity",value:(r:any)=>r.stock_qty}]);return}
+    if(module==="Parties"){downloadCsv(`Parties-FY-${fiscalYear?.label_bs}`,parties,[{label:"Party",value:(r:any)=>r.name},{label:"Address",value:(r:any)=>r.place},{label:"Phone",value:(r:any)=>r.phone},{label:"PAN",value:(r:any)=>r.tax_no},{label:"Opening balance",value:(r:any)=>r.opening_balance},{label:"Current balance",value:(r:any)=>r.balance}]);return}
+    const reportType=module==="Sales"?"sales":module==="Purchases"?"purchases":module==="Payments"?"payments":"expenses";try{const q=new URLSearchParams({fiscalYearId:fiscalYear.id,type:reportType,from:fiscalYear.start_ad,to:fiscalYear.end_ad});const response=await fetch(`/api/reports?${q}`,{cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error);downloadCsv(`${module}-FY-${fiscalYear?.label_bs}`,data.rows,[{label:"Reference",value:(r:any)=>r.ref},{label:"Date (BS)",value:(r:any)=>formatBs(r.date)},{label:"Party / Account",value:(r:any)=>r.party},{label:"Particulars",value:(r:any)=>r.particulars},{label:"Payment mode",value:(r:any)=>r.paymentMode},{label:"Subtotal",value:(r:any)=>r.subtotal},{label:"Discount",value:(r:any)=>r.discount},{label:"Tax",value:(r:any)=>r.tax},{label:"Amount",value:(r:any)=>r.amount},{label:"Debit",value:(r:any)=>r.debit},{label:"Credit",value:(r:any)=>r.credit}])}catch(error){setNotice(error instanceof Error?error.message:"Download failed")}
+  }
 
   return (
     <main className="app-shell">
@@ -868,12 +874,7 @@ export default function Home() {
                     Review the last bill first, then create the next invoice.
                   </p>
                 </div>
-                <button
-                  className="primary"
-                  onClick={openSale}
-                >
-                  ＋ Add sales invoice
-                </button>
+                <div className="hero-actions"><button className="primary soft" onClick={()=>exportModule("Sales")}>⇩ Excel / CSV</button><button className="primary soft" onClick={()=>printDocument("report")}>Print / PDF</button><button className="primary" onClick={openSale}>＋ Add sales invoice</button></div>
               </div>
               <div className="sales-stats">
                 <article>
@@ -975,6 +976,7 @@ export default function Home() {
                             : "Record office and operating expenses."}
                   </p>
                 </div>
+                <div className="hero-actions module-export"><button className="primary soft" onClick={()=>exportModule(active)}>⇩ Excel / CSV</button><button className="primary soft" onClick={()=>printDocument("report")}>Print / PDF</button></div>
                 {active === "Purchases" && (
                   <button
                     className="primary"
@@ -1170,7 +1172,7 @@ export default function Home() {
                 {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
               </div>
             )}
-            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" onClick={() => window.print()}>Print / PDF</button></div>
+            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" onClick={() => printDocument("voucher")}>Print / PDF</button></div>
           </section>
         </div>
       )}

@@ -55,7 +55,8 @@ export async function GET(request: Request) {
 
     let voucherQuery = db.from("vouchers").select("id,voucher_no,voucher_type,voucher_date,narration,payment_mode,subtotal,discount_amount,tax_amount,total,party_id,parties(name),ledger_entries(debit,credit,account_name)").eq("company_id", company.id).eq("fiscal_year_id", fy.id).gte("voucher_date", dateFrom).lte("voucher_date", dateTo).order("voucher_date").order("created_at");
     if (partyId) voucherQuery = voucherQuery.eq("party_id", partyId);
-    if (reportType === "sales") voucherQuery = voucherQuery.eq("voucher_type", "sale");
+    const voucherReportTypes:Record<string,string>={sales:"sale",purchases:"purchase",payments:"receipt",expenses:"expense"};
+    if (voucherReportTypes[reportType]) voucherQuery = voucherQuery.eq("voucher_type", voucherReportTypes[reportType]);
     const { data: vouchers, error: voucherError } = await voucherQuery;
     if (voucherError) throw voucherError;
 
