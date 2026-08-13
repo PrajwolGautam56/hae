@@ -73,6 +73,12 @@ async function snapshot(requestedFy?: string) {
   ]);
   if (partyError || openingError || voucherError || productError || sequenceError)
     throw partyError || openingError || voucherError || productError || sequenceError;
+  const { data: productTypes } = await supabase
+    .from("products")
+    .select("id,item_type")
+    .eq("company_id", company.id);
+  const productTypeMap = new Map((productTypes || []).map((row:any) => [row.id, row.item_type]));
+  const productRows = (products || []).map((row:any) => ({ ...row, item_type: productTypeMap.get(row.id) || "finished_good" }));
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
   );
@@ -130,7 +136,7 @@ async function snapshot(requestedFy?: string) {
     fiscalYear,
     fiscalYears,
     parties: partyRows,
-    products: products || [],
+    products: productRows,
     transactions,
     totals,
     nextNumbers: Object.fromEntries(
@@ -235,6 +241,7 @@ export async function POST(request: Request) {
           purchase_price: Number(body.purchasePrice || 0),
           stock_qty: Number(body.openingStock || 0),
           low_stock_at: Number(body.lowStockAt || 0),
+          item_type: String(body.productType || "finished_good"),
         },
         { onConflict: "company_id,name" },
       );

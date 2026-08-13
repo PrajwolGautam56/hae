@@ -54,12 +54,16 @@ type SaleLine = {
   name: string;
   quantity: number;
   rate: number;
+  unit?: string;
+  itemType?: string;
 };
 const emptySaleLine = (): SaleLine => ({
   productId: "",
   name: "",
   quantity: 1,
   rate: 0,
+  unit: "pcs",
+  itemType: "finished_good",
 });
 
 export default function Home() {
@@ -68,7 +72,7 @@ export default function Home() {
   const [active, setActive] = useState("Overview");
   const [range, setRange] = useState("This month");
   const [modal, setModal] = useState<
-    "sale" | "payment" | "purchase" | "expense" | "party" | "product" | null
+    "sale" | "payment" | "purchase" | "expense" | "party" | "product" | "production" | null
   >(null);
   const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
@@ -113,6 +117,10 @@ export default function Home() {
   const [transactionDate, setTransactionDate] = useState(today);
   const [voucherDetail, setVoucherDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [productType, setProductType] = useState("finished_good");
+  const [outputProductId, setOutputProductId] = useState("");
+  const [outputQuantity, setOutputQuantity] = useState("");
+  const [productionInputs, setProductionInputs] = useState([{ productId: "", quantity: 0 }]);
   const [reportPartyId, setReportPartyId] = useState("");
   const fiscalRequest = useRef(0);
   const visibleParties = useMemo(
@@ -183,6 +191,20 @@ export default function Home() {
   }
 
   async function save(kind: string) {
+    if (modal === "production") {
+      const consumptions = productionInputs.filter((row) => row.productId && Number(row.quantity) > 0);
+      if (!outputProductId || Number(outputQuantity) <= 0 || !consumptions.length) {
+        setNotice("Select an output product, quantity and at least one material");
+        return;
+      }
+      setSaving(true);
+      const response = await fetch("/api/manufacturing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fiscalYearId: fiscalYear.id, date: transactionDate, outputProductId, outputQuantity: Number(outputQuantity), consumptions: consumptions.map((row) => ({ product_id: row.productId, quantity: Number(row.quantity) })), notes: particulars }) });
+      const data = await response.json();
+      setSaving(false);
+      if (!response.ok) { setNotice(data.error || "Could not record production"); return; }
+      const refreshed = await fetch(`/api/accounting?fy=${fiscalYear.id}`).then((r) => r.json());
+      applySnapshot(refreshed); setModal(null); setOutputProductId(""); setOutputQuantity(""); setProductionInputs([{ productId: "", quantity: 0 }]); setParticulars(""); setNotice(`Production batch ${data.batch_no} saved`); return;
+    }
     const party = parties.find((p) => p.name === formParty);
     const validLines = saleLines.filter(
       (l) => l.name.trim() && l.quantity > 0 && l.rate >= 0,
@@ -236,6 +258,8 @@ export default function Home() {
           name: l.name,
           quantity: l.quantity,
           rate: l.rate,
+          unit: l.unit || "pcs",
+          item_type: l.itemType || "finished_good",
         })),
         taxPercent,
         discountPercent,
@@ -247,6 +271,7 @@ export default function Home() {
         openingStock: Number(openingStock || 0),
         openingBalance:
           Number(openingBalance || 0) * (openingSide === "credit" ? -1 : 1),
+        productType,
         place,
         phone,
         taxNo,
@@ -310,6 +335,9 @@ export default function Home() {
       setNewPartyName("");
       setPlace(""); setPhone(""); setTaxNo("");
     }
+  }
+  function openProduction() {
+    setModal("production"); setOutputProductId(products.find((p) => p.item_type === "finished_good")?.id || ""); setOutputQuantity(""); setProductionInputs([{ productId: "", quantity: 0 }]); setParticulars(""); setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
   }
   function updateSaleLine(index: number, patch: Partial<SaleLine>) {
     setSaleLines((lines) =>
@@ -924,12 +952,7 @@ export default function Home() {
                   </button>
                 )}
                 {active === "Inventory" && (
-                  <button
-                    className="primary"
-                    onClick={() => openModuleModal("product")}
-                  >
-                    ＋ Add inventory item
-                  </button>
+                  <div className="hero-actions"><button className="primary soft" onClick={() => openModuleModal("product")}>＋ Add inventory item</button><button className="primary" onClick={openProduction}>⚙ Produce finished goods</button></div>
                 )}
                 {active === "Parties" && (
                   <button
@@ -970,6 +993,7 @@ export default function Home() {
                         <tr>
                           <th>SKU</th>
                           <th>PRODUCT</th>
+                          <th>TYPE</th>
                           <th>UNIT</th>
                           <th>PURCHASE</th>
                           <th>SALE</th>
@@ -983,6 +1007,7 @@ export default function Home() {
                             <td>
                               <strong>{p.name}</strong>
                             </td>
+                            <td><span className={`item-type ${p.item_type}`}>{({raw_material:"Raw material",packaging:"Packaging",finished_good:"Finished product",resale_good:"Resale product"} as any)[p.item_type] || "Finished product"}</span></td>
                             <td>{p.unit}</td>
                             <td>{money(Number(p.purchase_price))}</td>
                             <td>{money(Number(p.sale_price))}</td>
@@ -1112,7 +1137,24 @@ export default function Home() {
         </div>
       )}
 
-      {modal && !["party", "product"].includes(modal) && (
+      {modal === "production" && (
+        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+          <section className="modal production-modal" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="modal-head"><div><small>MANUFACTURING · FY {fiscalYear?.label_bs}</small><h2>Produce finished goods</h2></div><button onClick={() => setModal(null)}>×</button></div>
+            <div className="form-grid production-form">
+              <div className="production-flow full"><span>RAW MATERIALS</span><b>− consume →</b><span>FINISHED STOCK</span></div>
+              <label>Production date<input type="date" min={fiscalYear?.start_ad} max={fiscalYear?.end_ad} value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} /></label>
+              <label>Finished product<select value={outputProductId} onChange={(e) => setOutputProductId(e.target.value)}><option value="">Select output product</option>{products.filter((p) => ["finished_good","resale_good"].includes(p.item_type)).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.stock_qty} {p.unit}</option>)}</select></label>
+              <label>Quantity produced<input type="number" min="0.001" step="0.001" value={outputQuantity} onChange={(e) => setOutputQuantity(e.target.value)} placeholder="e.g. 200" /></label>
+              <div className="production-materials full"><div className="production-material-head"><strong>Materials consumed</strong><small>Stock is checked before saving</small></div>{productionInputs.map((row,index)=><div className="production-material-row" key={index}><select aria-label={`Material ${index+1}`} value={row.productId} onChange={(e)=>setProductionInputs((rows)=>rows.map((x,i)=>i===index?{...x,productId:e.target.value}:x))}><option value="">Select raw material / packaging</option>{products.filter((p)=>["raw_material","packaging"].includes(p.item_type)).map((p)=><option key={p.id} value={p.id}>{p.name} · Available {p.stock_qty} {p.unit}</option>)}</select><input aria-label={`Consumed quantity ${index+1}`} type="number" min="0.001" step="0.001" value={row.quantity || ""} onChange={(e)=>setProductionInputs((rows)=>rows.map((x,i)=>i===index?{...x,quantity:Number(e.target.value)}:x))} placeholder="Quantity used"/><button disabled={productionInputs.length===1} onClick={()=>setProductionInputs((rows)=>rows.filter((_,i)=>i!==index))}>×</button></div>)}<button className="add-line" onClick={()=>setProductionInputs((rows)=>[...rows,{productId:"",quantity:0}])}>＋ Add another material</button></div>
+              <label className="full">Batch notes<input value={particulars} onChange={(e)=>setParticulars(e.target.value)} placeholder="Formula, operator or production notes" /></label>
+            </div>
+            <div className="modal-actions"><button onClick={()=>setModal(null)}>Cancel</button><button className="primary" disabled={saving} onClick={()=>save("Production")}>{saving?"Producing…":"Save production batch"}</button></div>
+          </section>
+        </div>
+      )}
+
+      {modal && !["party", "product", "production"].includes(modal) && (
         <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
           <section
             className={`modal ${modal === "sale" || modal === "purchase" ? "invoice-modal" : ""}`}
@@ -1239,13 +1281,7 @@ export default function Home() {
                           ))}
                         </select>
                         {!line.productId && (
-                          <input
-                            value={line.name}
-                            onChange={(e) =>
-                              updateSaleLine(index, { name: e.target.value })
-                            }
-                            placeholder="Type item name"
-                          />
+                          <><input value={line.name} onChange={(e) => updateSaleLine(index, { name: e.target.value })} placeholder="Type item name" />{modal === "purchase" && <div className="purchase-item-meta"><select aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})}><option value="pcs">pcs</option><option value="litre">litre</option><option value="ml">ml</option><option value="kg">kg</option><option value="bag">bag</option><option value="box">box</option><option value="bucket">bucket</option></select><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
                         )}
                       </div>
                       <input
@@ -1529,6 +1565,17 @@ export default function Home() {
                       <option>box</option>
                       <option>sheet</option>
                       <option>meter</option>
+                      <option value="litre">litre</option>
+                      <option value="ml">ml</option>
+                    </select>
+                  </label>
+                  <label>
+                    Inventory type
+                    <select value={productType} onChange={(e) => setProductType(e.target.value)}>
+                      <option value="raw_material">Raw material</option>
+                      <option value="packaging">Packaging</option>
+                      <option value="finished_good">Finished product</option>
+                      <option value="resale_good">Purchased finished / resale product</option>
                     </select>
                   </label>
                   <label>
