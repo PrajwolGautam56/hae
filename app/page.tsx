@@ -146,6 +146,7 @@ export default function Home() {
   useEffect(() => { refreshChequeCounts(); }, []);
 
   function applySnapshot(data: any) {
+    if (!data?.parties || !data?.transactions) return;
     setParties(
       data.parties.map((p: any, i: number) => ({
         ...p,
@@ -177,15 +178,21 @@ export default function Home() {
     setFiscalYear(data.fiscalYear || null);
     setProducts(data.products || []);
     setCompany(data.company || { name: "Hamro Afno Enterprises" });
+    try { sessionStorage.setItem(`hae-snapshot-${data.fiscalYear?.id || "current"}`, JSON.stringify(data)); sessionStorage.setItem("hae-snapshot-current", JSON.stringify(data)); } catch {}
   }
+  function clearReportCache(){try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith("hae-report-"))sessionStorage.removeItem(key)}}catch{}}
   useEffect(() => {
-    fetch("/api/accounting")
+    try { const cached=sessionStorage.getItem("hae-snapshot-current");if(cached)applySnapshot(JSON.parse(cached)); } catch {}
+    const controller=new AbortController();
+    fetch("/api/accounting",{signal:controller.signal})
       .then((r) => r.json())
       .then(applySnapshot)
-      .catch(() => setNotice("Local database could not be loaded"));
+      .catch((error) => {if(error?.name!=="AbortError")setNotice("Database could not be loaded")});
+    return()=>controller.abort();
   }, []);
   async function changeFiscalYear(id: string) {
     const request = ++fiscalRequest.current;
+    try{const cached=sessionStorage.getItem(`hae-snapshot-${id}`);if(cached)applySnapshot(JSON.parse(cached))}catch{}
     const data = await fetch(`/api/accounting?fy=${id}`).then((r) => r.json());
     if (request === fiscalRequest.current) {
       applySnapshot(data);
@@ -290,6 +297,7 @@ export default function Home() {
       setNotice(data.error || "Could not save");
       return;
     }
+    clearReportCache();
     applySnapshot(data);
     setModal(null);
     setEditingVoucherId("");

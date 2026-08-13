@@ -262,3 +262,19 @@ td strong { font-size:10px; }
 
 /* Administrator user control */
 .admin-access-loading,.admin-access-denied{margin-top:20px;padding:22px}.admin-access-denied span{font-size:9px;font-weight:800;letter-spacing:.1em;color:#b42318}.admin-access-denied h3{margin:7px 0}.admin-access-denied p{margin:0;color:#667085}.admin-check{display:flex!important;align-items:center;grid-template-columns:auto 1fr!important}.admin-check input{width:18px!important;height:18px!important}.user-access-list>div{grid-template-columns:40px minmax(180px,1fr) auto minmax(250px,auto)!important}.user-access-list select{height:30px;margin-top:7px;border:1px solid #d0d5dd;border-radius:8px;background:#fff}.user-row-actions{display:flex;gap:6px}.user-row-actions button{white-space:nowrap}.user-row-actions .delete-user{border-color:#fecaca;color:#b42318;background:#fff5f5}@media(max-width:900px){.user-access-list>div{grid-template-columns:40px 1fr auto!important}.user-row-actions{grid-column:2/-1;flex-wrap:wrap}.user-row-actions button{flex:1}}@media(max-width:520px){.user-access-list>div{grid-template-columns:40px 1fr!important}.user-access-list em{grid-column:2!important;justify-self:start}.user-row-actions{grid-column:1/-1}.user-row-actions button{min-width:100%}}
+
+@media(max-width:760px){
+  .page{overflow:visible!important;padding-inline:12px!important}
+  .module-page,.reports-workspace,.cheque-workspace,.crm-workspace{gap:12px!important}
+  .module-hero{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:14px!important;padding:17px!important;background:linear-gradient(145deg,#fff,#f4f7fb)!important;color:#182230!important;border:1px solid #e4eaf2!important;box-shadow:0 5px 18px rgba(16,24,40,.055)!important}
+  .module-hero span{color:#175cd3!important}.module-hero h2{margin:5px 0 4px!important;font-size:20px!important}.module-hero p{display:block!important;color:#667085!important;line-height:1.45!important}
+  .module-hero .hero-actions,.module-export{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;width:100%!important;gap:8px!important}
+  .module-hero .hero-actions .primary,.module-hero>.primary,.crm-toolbar>.primary{width:100%!important;min-height:42px!important;padding:9px 10px!important;white-space:normal!important;line-height:1.2!important}
+  .sales-module .module-hero .hero-actions .primary:last-child{grid-column:1/-1}
+  .report-hero .hero-actions{grid-template-columns:1fr 1fr!important}.report-filters{padding:14px!important;gap:10px!important}.report-filters>button{width:100%!important}
+  .card-title{align-items:flex-start!important;gap:10px!important}.card-title>.primary{width:auto!important;min-height:38px!important}
+  .sales-stats,.summary-grid,.ledger-summary{gap:8px!important}.sales-stats article,.summary-grid article,.ledger-summary article{padding:13px!important}
+  .table-wrap{border-radius:0 0 14px 14px}.table-wrap table{font-size:11px!important}.table-wrap th,.table-wrap td{padding:11px 10px!important}
+  .cheque-hero{grid-template-columns:1fr auto!important}.cheque-hero-count{text-align:right!important}.crm-toolbar{display:grid!important;grid-template-columns:1fr!important}.crm-toolbar p{line-height:1.45}
+}
+@media(max-width:420px){.module-hero .hero-actions,.module-export{grid-template-columns:1fr!important}.sales-module .module-hero .hero-actions .primary:last-child{grid-column:auto}.report-hero .hero-actions{grid-template-columns:1fr!important}}

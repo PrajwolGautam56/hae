@@ -4,35 +4,19 @@ export const dynamic = "force-dynamic";
 
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
+async function accountingContext(requestedFy?:string){
+  const supabase=getSupabaseAdmin();if(!supabase)throw new Error("Supabase server configuration is missing");
+  const {data:companies,error:companyError}=await supabase.from("companies").select("id,name,currency,fiscal_year").order("created_at").limit(1);
+  if(companyError||!companies?.[0])throw companyError||new Error("Company not found");
+  const company=companies[0];
+  let {data:fiscalYears,error:fyError}=await supabase.from("fiscal_years").select("*").eq("company_id",company.id).order("start_ad",{ascending:false});
+  if(fyError)throw fyError;const today=businessDate();let fiscalYear=requestedFy?fiscalYears?.find(f=>f.id===requestedFy):fiscalYears?.find(f=>f.start_ad<=today&&f.end_ad>=today);
+  if(!fiscalYear&&!requestedFy){const {error}=await supabase.rpc("ensure_fiscal_year_for_date",{p_company_id:company.id,p_date:today});if(error)throw error;const refreshed=await supabase.from("fiscal_years").select("*").eq("company_id",company.id).order("start_ad",{ascending:false});if(refreshed.error)throw refreshed.error;fiscalYears=refreshed.data;fiscalYear=fiscalYears?.find(f=>f.start_ad<=today&&f.end_ad>=today)}
+  fiscalYear ||= fiscalYears?.[0];if(!fiscalYear)throw new Error("Fiscal year not found");return{supabase,company,fiscalYears:fiscalYears||[],fiscalYear};
+}
+
 async function snapshot(requestedFy?: string) {
-  const supabase = getSupabaseAdmin();
-  if (!supabase) throw new Error("Supabase server configuration is missing");
-  const { data: companies, error: companyError } = await supabase
-    .from("companies")
-    .select("id,name,currency,fiscal_year")
-    .order("created_at")
-    .limit(1);
-  if (companyError || !companies?.[0])
-    throw companyError || new Error("Company not found");
-  const company = companies[0];
-  const { error: fiscalEnsureError } = await supabase.rpc(
-    "ensure_fiscal_year_for_date",
-    { p_company_id: company.id, p_date: businessDate() },
-  );
-  if (fiscalEnsureError) throw fiscalEnsureError;
-  const { data: fiscalYears, error: fyError } = await supabase
-    .from("fiscal_years")
-    .select("*")
-    .eq("company_id", company.id)
-    .order("start_ad", { ascending: false });
-  if (fyError) throw fyError;
-  const now = new Date().toISOString().slice(0, 10);
-  const fiscalYear =
-    (requestedFy
-      ? fiscalYears?.find((f) => f.id === requestedFy)
-      : fiscalYears?.find((f) => f.start_ad <= now && f.end_ad >= now)) ||
-    fiscalYears?.[0];
-  if (!fiscalYear) throw new Error("Fiscal year not found");
+  const {supabase,company,fiscalYears,fiscalYear}=await accountingContext(requestedFy);
   const [
     { data: parties, error: partyError },
     { data: openings, error: openingError },
@@ -61,7 +45,7 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("products")
       .select(
-        "id,sku,name,unit,sale_price,purchase_price,stock_qty,low_stock_at",
+        "id,sku,name,unit,sale_price,purchase_price,stock_qty,low_stock_at,item_type",
       )
       .eq("company_id", company.id)
       .eq("active", true)
@@ -73,12 +57,7 @@ async function snapshot(requestedFy?: string) {
   ]);
   if (partyError || openingError || voucherError || productError || sequenceError)
     throw partyError || openingError || voucherError || productError || sequenceError;
-  const { data: productTypes } = await supabase
-    .from("products")
-    .select("id,item_type")
-    .eq("company_id", company.id);
-  const productTypeMap = new Map((productTypes || []).map((row:any) => [row.id, row.item_type]));
-  const productRows = (products || []).map((row:any) => ({ ...row, item_type: productTypeMap.get(row.id) || "finished_good" }));
+  const productRows = (products || []).map((row:any) => ({ ...row, item_type: row.item_type || "finished_good" }));
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
   );
@@ -185,7 +164,7 @@ export async function POST(request: Request) {
     if (!supabase) throw new Error("Supabase server configuration is missing");
     const body = (await request.json()) as Record<string, unknown>;
     const type = String(body.type || "");
-    const initialState = await snapshot(String(body.fiscalYearId || ""));
+    const initialState = await accountingContext(String(body.fiscalYearId || ""));
     if (type === "party") {
       const name = String(body.partyName || "").trim();
       if (!name)
@@ -383,7 +362,7 @@ export async function PUT(request: Request) {
     const body=await request.json();
     const productId=String(body.productId||"");
     if(productId){
-      const state=await snapshot(String(body.fiscalYearId||""));
+      const state=await accountingContext(String(body.fiscalYearId||""));
       const name=String(body.productName||"").trim();
       if(!name)return NextResponse.json({error:"Product name is required"},{status:400});
       const values={name,sku:String(body.sku||""),unit:String(body.unit||"pcs"),sale_price:Number(body.salePrice||0),purchase_price:Number(body.purchasePrice||0),item_type:String(body.productType||"finished_good")};

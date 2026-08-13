@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import { formatBs } from "../lib/nepali-date";
 import { downloadCsv, printDocument } from "../lib/export-data";
@@ -19,11 +19,12 @@ export default function ReportsWorkspace({ parties, fiscalYear, initialPartyId, 
   const [to,setTo] = useState(initialPartyId ? fiscalYear?.end_ad || now : now);
   const [data,setData] = useState<any>(null);
   const [loading,setLoading] = useState(false);
+  const requestRef=useRef<AbortController|null>(null);
 
   useEffect(()=>{ if(initialPartyId){setPartyId(initialPartyId);setPreset("fy");setFrom(fiscalYear?.start_ad||now);setTo(fiscalYear?.end_ad||now)} },[initialPartyId,fiscalYear?.id]);
   useEffect(()=>{ if(!fiscalYear?.id)return; const timer=setTimeout(run,80); return()=>clearTimeout(timer) },[partyId,type,accountId,from,to,fiscalYear?.id]);
   function choosePreset(value: "today"|"fy"|"custom") { setPreset(value); if(value==="today"){setFrom(now);setTo(now)} if(value==="fy"){setFrom(fiscalYear.start_ad);setTo(fiscalYear.end_ad)} }
-  async function run(){setLoading(true);try{const q=new URLSearchParams({fiscalYearId:fiscalYear.id,type,from,to});if(partyId&&type!=="general_ledger"&&type!=="trial_balance")q.set("partyId",partyId);if(accountId&&type==="general_ledger")q.set("accountId",accountId);const r=await fetch(`/api/reports?${q}`,{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error);setData(d)}catch(e){onNotice(e instanceof Error?e.message:"Report could not load")}finally{setLoading(false)}}
+  async function run(){requestRef.current?.abort();const controller=new AbortController();requestRef.current=controller;setLoading(true);try{const q=new URLSearchParams({fiscalYearId:fiscalYear.id,type,from,to});if(partyId&&type!=="general_ledger"&&type!=="trial_balance")q.set("partyId",partyId);if(accountId&&type==="general_ledger")q.set("accountId",accountId);const key=`hae-report-${q}`;const cached=sessionStorage.getItem(key);if(cached)setData(JSON.parse(cached));const r=await fetch(`/api/reports?${q}`,{cache:"no-store",signal:controller.signal});const d=await r.json();if(!r.ok)throw new Error(d.error);setData(d);sessionStorage.setItem(key,JSON.stringify(d))}catch(e){if((e as any)?.name!=="AbortError")onNotice(e instanceof Error?e.message:"Report could not load")}finally{if(requestRef.current===controller)setLoading(false)}}
   function exportReport(){if(!data?.rows?.length){onNotice("There is no report data to download");return}const name=`${type}-${data.party?.name||"all"}-${from}-to-${to}`;if(type==="trial_balance")downloadCsv(name,data.rows,[{label:"Code",value:(r:any)=>r.code},{label:"Account",value:(r:any)=>r.name},{label:"Opening Dr",value:(r:any)=>r.openingDebit},{label:"Opening Cr",value:(r:any)=>r.openingCredit},{label:"Period Dr",value:(r:any)=>r.debit},{label:"Period Cr",value:(r:any)=>r.credit},{label:"Closing Dr",value:(r:any)=>r.closingDebit},{label:"Closing Cr",value:(r:any)=>r.closingCredit}]);else if(type==="general_ledger")downloadCsv(name,data.rows,[{label:"Date (BS)",value:(r:any)=>formatBs(r.date)},{label:"Reference",value:(r:any)=>r.ref},{label:"Account",value:(r:any)=>`${r.accountCode} ${r.accountName}`},{label:"Particulars",value:(r:any)=>r.particulars},{label:"Debit",value:(r:any)=>r.debit},{label:"Credit",value:(r:any)=>r.credit},{label:"Balance",value:(r:any)=>r.balance??""}]);else downloadCsv(name,data.rows,[{label:"Date (BS)",value:(r:any)=>formatBs(r.date)},{label:"Reference",value:(r:any)=>r.ref},{label:"Type",value:(r:any)=>typeLabel[r.type]||r.type},{label:"Party",value:(r:any)=>r.party},{label:"Particulars",value:(r:any)=>r.particulars},{label:"Debit",value:(r:any)=>r.debit},{label:"Credit",value:(r:any)=>r.credit},{label:"Balance",value:(r:any)=>r.balance??""}]);}
   const balance = Number(data?.closing || 0);
   return <section className="reports-workspace">
