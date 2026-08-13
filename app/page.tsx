@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import NepaliDate from "nepali-date-converter";
+import BsDateInput from "./bs-date-input";
+import { formatBs } from "../lib/nepali-date";
 import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
 import ChequeWorkspace from "./cheque-workspace";
@@ -30,8 +31,7 @@ const parseDate = (value: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(`${value}T12:00:00`)
     : new Date(value);
-const bsDate = (value: string) =>
-  new NepaliDate(parseDate(value)).format("DD MMMM YYYY", "np");
+const bsDate = formatBs;
 const adMonths = [
   "Jan",
   "Feb",
@@ -1181,7 +1181,7 @@ export default function Home() {
             <div className="modal-head"><div><small>MANUFACTURING · FY {fiscalYear?.label_bs}</small><h2>Produce finished goods</h2></div><button onClick={() => setModal(null)}>×</button></div>
             <div className="form-grid production-form">
               <div className="production-flow full"><span>RAW MATERIALS</span><b>− consume →</b><span>FINISHED STOCK</span></div>
-              <label>Production date<input type="date" min={fiscalYear?.start_ad} max={fiscalYear?.end_ad} value={transactionDate} onChange={(e) => setTransactionDate(e.target.value)} /></label>
+              <label>Production date (BS)<BsDateInput min={fiscalYear?.start_ad} max={fiscalYear?.end_ad} value={transactionDate} onChange={setTransactionDate}/></label>
               <label>Finished product<select value={outputProductId} onChange={(e) => setOutputProductId(e.target.value)}><option value="">Select output product</option>{products.filter((p) => ["finished_good","resale_good"].includes(p.item_type)).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.stock_qty} {p.unit}</option>)}</select></label>
               <label>Quantity produced<input type="number" min="0.001" step="0.001" value={outputQuantity} onChange={(e) => setOutputQuantity(e.target.value)} placeholder="e.g. 200" /></label>
               <div className="production-materials full"><div className="production-material-head"><strong>Materials consumed</strong><small>Stock is checked before saving</small></div>{productionInputs.map((row,index)=><div className="production-material-row" key={index}><select aria-label={`Material ${index+1}`} value={row.productId} onChange={(e)=>setProductionInputs((rows)=>rows.map((x,i)=>i===index?{...x,productId:e.target.value}:x))}><option value="">Select raw material / packaging</option>{products.filter((p)=>["raw_material","packaging"].includes(p.item_type)).map((p)=><option key={p.id} value={p.id}>{p.name} · Available {p.stock_qty} {p.unit}</option>)}</select><input aria-label={`Consumed quantity ${index+1}`} type="number" min="0.001" step="0.001" value={row.quantity || ""} onChange={(e)=>setProductionInputs((rows)=>rows.map((x,i)=>i===index?{...x,quantity:Number(e.target.value)}:x))} placeholder="Quantity used"/><button disabled={productionInputs.length===1} onClick={()=>setProductionInputs((rows)=>rows.filter((_,i)=>i!==index))}>×</button></div>)}<button className="add-line" onClick={()=>setProductionInputs((rows)=>[...rows,{productId:"",quantity:0}])}>＋ Add another material</button></div>
@@ -1261,15 +1261,8 @@ export default function Home() {
                 </>
               )}
               <label>
-                Transaction date (AD)
-                <input
-                  type="date"
-                  min={fiscalYear?.start_ad}
-                  max={fiscalYear?.end_ad}
-                  value={transactionDate}
-                  onChange={(e) => setTransactionDate(e.target.value)}
-                />
-                <small className="date-conversion">BS: {transactionDate ? bsDate(transactionDate) : "—"}</small>
+                Transaction date (BS)
+                <BsDateInput min={fiscalYear?.start_ad} max={fiscalYear?.end_ad} value={transactionDate} onChange={setTransactionDate}/>
               </label>
               <label>
                 {modal === "sale"
@@ -1447,7 +1440,7 @@ export default function Home() {
                       Payment mode
                       <select
                         value={paymentMode}
-                        onChange={(e) => setPaymentMode(e.target.value)}
+                        onChange={(e) => {setPaymentMode(e.target.value);if(e.target.value==="Cheque"&&!chequeExchangeDate)setChequeExchangeDate(transactionDate)}}
                       >
                         <option>Cash</option>
                         <option>Bank transfer</option>
@@ -1460,7 +1453,7 @@ export default function Home() {
                       <div><strong>Cheque details</strong><span>This receipt stays pending until marked cleared.</span></div>
                       <label>Cheque number *<input value={chequeNo} onChange={(e) => setChequeNo(e.target.value)} placeholder="Enter cheque number" /></label>
                       <label>Bank name *<input list="cheque-bank-options" value={chequeBank} onChange={(e) => setChequeBank(e.target.value)} placeholder="Select or type a new bank" /><datalist id="cheque-bank-options">{chequeBanks.map((bank:any)=><option key={bank.id} value={bank.name} />)}</datalist></label>
-                      <label>Exchange / clearance date *<input type="date" value={chequeExchangeDate} onChange={(e) => setChequeExchangeDate(e.target.value)} /></label>
+                      <label>Exchange / clearance date (BS) *<BsDateInput value={chequeExchangeDate || transactionDate} onChange={setChequeExchangeDate}/></label>
                     </div>
                   )}
                 </>
