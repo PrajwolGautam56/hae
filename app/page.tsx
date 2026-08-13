@@ -119,6 +119,7 @@ export default function Home() {
   const [voucherDetail, setVoucherDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editingVoucherId, setEditingVoucherId] = useState("");
+  const [editingProductId, setEditingProductId] = useState("");
   const [productType, setProductType] = useState("finished_good");
   const [outputProductId, setOutputProductId] = useState("");
   const [outputQuantity, setOutputQuantity] = useState("");
@@ -236,10 +237,11 @@ export default function Home() {
     }
     setSaving(true);
     const response = await fetch("/api/accounting", {
-      method: editingVoucherId ? "PUT" : "POST",
+      method: editingVoucherId || editingProductId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         voucherId: editingVoucherId || undefined,
+        productId: editingProductId || undefined,
         type: modal || "payment",
         partyId: modal === "expense" ? undefined : party?.id,
         partyName:
@@ -290,6 +292,7 @@ export default function Home() {
     applySnapshot(data);
     setModal(null);
     setEditingVoucherId("");
+    setEditingProductId("");
     setAmount("");
     setPaymentMode("Cash");
     setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
@@ -329,10 +332,12 @@ export default function Home() {
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
   }
   function openModuleModal(kind: "purchase" | "expense" | "party" | "product") {
+    setEditingProductId("");
     setModal(kind);
     setAmount("");
     setParticulars("");
     setEntityName("");
+    if (kind === "product") { setSku(""); setUnit("pcs"); setSalePrice(""); setPurchasePrice(""); setOpeningStock(""); }
     setOpeningBalance(""); setOpeningSide("debit");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
     if (kind === "purchase") {
@@ -341,6 +346,17 @@ export default function Home() {
       setNewPartyName("");
       setPlace(""); setPhone(""); setTaxNo("");
     }
+  }
+  function editProduct(product: any) {
+    setEditingProductId(product.id);
+    setEntityName(product.name || "");
+    setSku(product.sku || "");
+    setUnit(product.unit || "pcs");
+    setProductType(product.item_type || "finished_good");
+    setPurchasePrice(String(product.purchase_price ?? 0));
+    setSalePrice(String(product.sale_price ?? 0));
+    setOpeningStock(String(product.stock_qty ?? 0));
+    setModal("product");
   }
   function openProduction() {
     setModal("production"); setOutputProductId(products.find((p) => p.item_type === "finished_good")?.id || ""); setOutputQuantity(""); setProductionInputs([{ productId: "", quantity: 0 }]); setParticulars(""); setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
@@ -1017,6 +1033,7 @@ export default function Home() {
                           <th>PURCHASE</th>
                           <th>SALE</th>
                           <th>STOCK</th>
+                          <th></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1033,9 +1050,10 @@ export default function Home() {
                             <td>
                               <strong>{p.stock_qty}</strong>
                             </td>
+                            <td><button className="table-action" onClick={() => editProduct(p)}>Edit</button></td>
                           </tr>
                         ))}
-                        {!products.some((p) => active === "Inventory" ? ["raw_material","packaging"].includes(p.item_type) : ["finished_good","resale_good"].includes(p.item_type)) && <tr><td colSpan={7} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
+                        {!products.some((p) => active === "Inventory" ? ["raw_material","packaging"].includes(p.item_type) : ["finished_good","resale_good"].includes(p.item_type)) && <tr><td colSpan={8} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
                       </tbody>
                     </table>
                   ) : active === "Parties" ? (
@@ -1506,7 +1524,7 @@ export default function Home() {
                   {modal === "party" ? "PARTY MASTER" : "INVENTORY MASTER"}
                 </small>
                 <h2>
-                  {modal === "party" ? "Add new party" : "Add inventory item"}
+                  {modal === "party" ? "Add new party" : editingProductId ? "Edit inventory item" : "Add inventory item"}
                 </h2>
               </div>
               <button onClick={() => setModal(null)}>×</button>
@@ -1615,11 +1633,12 @@ export default function Home() {
                     />
                   </label>
                   <label>
-                    Opening stock
+                    {editingProductId ? "Current stock (managed by transactions)" : "Opening stock"}
                     <input
                       type="number"
                       value={openingStock}
                       onChange={(e) => setOpeningStock(e.target.value)}
+                      disabled={Boolean(editingProductId)}
                     />
                   </label>
                 </>
@@ -1636,7 +1655,7 @@ export default function Home() {
                   ? "Saving…"
                   : modal === "party"
                     ? "Save party"
-                    : "Save item"}
+                    : editingProductId ? "Update item" : "Save item"}
               </button>
             </div>
           </section>

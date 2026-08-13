@@ -380,7 +380,19 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const supabase=getSupabaseAdmin();if(!supabase)throw new Error("Supabase server configuration is missing");
-    const body=await request.json();const voucherId=String(body.voucherId||"");const type=String(body.type||"");
+    const body=await request.json();
+    const productId=String(body.productId||"");
+    if(productId){
+      const state=await snapshot(String(body.fiscalYearId||""));
+      const name=String(body.productName||"").trim();
+      if(!name)return NextResponse.json({error:"Product name is required"},{status:400});
+      const values={name,sku:String(body.sku||""),unit:String(body.unit||"pcs"),sale_price:Number(body.salePrice||0),purchase_price:Number(body.purchasePrice||0),item_type:String(body.productType||"finished_good")};
+      if(!Number.isFinite(values.sale_price)||!Number.isFinite(values.purchase_price)||values.sale_price<0||values.purchase_price<0)return NextResponse.json({error:"Product prices must be valid positive numbers"},{status:400});
+      const {data,error}=await supabase.from("products").update(values).eq("id",productId).eq("company_id",state.company.id).select("id").maybeSingle();
+      if(error)throw error;if(!data)return NextResponse.json({error:"Product was not found"},{status:404});
+      return NextResponse.json(await snapshot(state.fiscalYear.id));
+    }
+    const voucherId=String(body.voucherId||"");const type=String(body.type||"");
     if(!voucherId||!["sale","payment"].includes(type))return NextResponse.json({error:"Editable voucher is required"},{status:400});
     const partyId=String(body.partyId||"");if(!partyId)return NextResponse.json({error:"Party is required"},{status:400});
     const result=type==="sale"?await supabase.rpc("update_sales_invoice",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_lines:body.lines,p_discount_percent:Number(body.discountPercent||0),p_tax_percent:Number(body.taxPercent||0),p_narration:String(body.particulars||"")}):await supabase.rpc("update_payment_receipt",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_amount:Number(body.amount),p_narration:String(body.particulars||""),p_payment_mode:String(body.paymentMode||"Cash"),p_cheque_no:body.chequeNo||null,p_cheque_bank:body.chequeBank||null,p_cheque_exchange_date:body.chequeExchangeDate||null});
