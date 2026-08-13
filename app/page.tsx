@@ -22,7 +22,7 @@ const nav = [
   "Team",
 ];
 
-const money = (n: number) => `Nu. ${Math.abs(n).toLocaleString("en-IN")}`;
+const money = (n: number) => `Rs. ${Math.abs(n).toLocaleString("en-IN")}`;
 const localBusinessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const today = localBusinessDate();
 const parseDate = (value: string) =>
@@ -470,7 +470,7 @@ export default function Home() {
             <img className="company-logo" src="/hamro-afno-logo.jpeg" alt="" />
             <div>
               <strong>{company.name}</strong>
-              <small>FY {fiscalYear?.label_bs || "2083/84"} · BTN</small>
+              <small>FY {fiscalYear?.label_bs || "2083/84"} · NPR</small>
             </div>
             <strong className="mobile-page-title">{active}</strong>
           </div>
@@ -1396,7 +1396,7 @@ export default function Home() {
                     />
                   </label>
                   <label>
-                    Amount (Nu.)
+                    Amount (Rs.)
                     <input
                       type="number"
                       onWheel={wheelNumberInput}

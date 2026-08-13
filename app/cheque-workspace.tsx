@@ -1,6 +1,6 @@
 "use client";
 import { useEffect,useState } from "react";
-const money=(n:number)=>`Nu. ${Number(n||0).toLocaleString("en-IN")}`;
+const money=(n:number)=>`Rs. ${Number(n||0).toLocaleString("en-IN")}`;
 export default function ChequeWorkspace({onNotice}:{onNotice:(x:string)=>void}){
  const [data,setData]=useState<any>({rows:[],counts:{}});const [filter,setFilter]=useState("pending");const [busy,setBusy]=useState("");
  async function load(){try{const r=await fetch("/api/cheques",{cache:"no-store"});const d=await r.json();if(!r.ok)throw new Error(d.error);setData(d)}catch(e){onNotice(e instanceof Error?e.message:"Cheque register could not load")}}

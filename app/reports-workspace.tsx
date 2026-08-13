@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const money = (n: number) => `Nu. ${Math.abs(Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (n: number) => `Rs. ${Math.abs(Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const typeLabel: Record<string,string> = { sale: "Sales Invoice", receipt: "Payment Receipt", purchase: "Purchase", expense: "Office Expense", journal: "Journal" };
 
 export default function ReportsWorkspace({ parties, fiscalYear, initialPartyId, onNotice }: { parties: any[]; fiscalYear: any; initialPartyId: string; onNotice: (x:string)=>void }) {
