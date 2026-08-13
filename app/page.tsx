@@ -117,6 +117,7 @@ export default function Home() {
   const [transactionDate, setTransactionDate] = useState(today);
   const [voucherDetail, setVoucherDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [editingVoucherId, setEditingVoucherId] = useState("");
   const [productType, setProductType] = useState("finished_good");
   const [outputProductId, setOutputProductId] = useState("");
   const [outputQuantity, setOutputQuantity] = useState("");
@@ -234,9 +235,10 @@ export default function Home() {
     }
     setSaving(true);
     const response = await fetch("/api/accounting", {
-      method: "POST",
+      method: editingVoucherId ? "PUT" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        voucherId: editingVoucherId || undefined,
         type: modal || "payment",
         partyId: modal === "expense" ? undefined : party?.id,
         partyName:
@@ -286,6 +288,7 @@ export default function Home() {
     }
     applySnapshot(data);
     setModal(null);
+    setEditingVoucherId("");
     setAmount("");
     setPaymentMode("Cash");
     setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
@@ -307,6 +310,7 @@ export default function Home() {
     window.setTimeout(() => setNotice(""), 2600);
   }
   function openSale() {
+    setEditingVoucherId("");
     setModal("sale");
     setFormParty(parties[0]?.name || "__new__");
     setSaleLines([emptySaleLine()]);
@@ -315,6 +319,7 @@ export default function Home() {
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
   }
   function openPayment() {
+    setEditingVoucherId("");
     setModal("payment");
     setFormParty(parties[0]?.name || "__new__");
     setNewPartyName(""); setAmount(""); setParticulars("");
@@ -389,6 +394,13 @@ export default function Home() {
     } finally {
       setDetailLoading(false);
     }
+  }
+  function editVoucher() {
+    const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type))return;
+    setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setParticulars(detail.narration||"");
+    if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setModal("sale");}
+    else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
+    setVoucherDetail(null);
   }
   const saleSubtotal = saleLines.reduce(
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0),
@@ -1133,7 +1145,7 @@ export default function Home() {
                 {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
               </div>
             )}
-            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button><button className="primary" onClick={() => window.print()}>Print / PDF</button></div>
+            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" onClick={() => window.print()}>Print / PDF</button></div>
           </section>
         </div>
       )}
@@ -1175,12 +1187,12 @@ export default function Home() {
                 </small>
                 <h2>
                   {modal === "sale"
-                    ? "Create sales invoice"
+                    ? editingVoucherId ? "Edit sales invoice" : "Create sales invoice"
                     : modal === "purchase"
                       ? "Create purchase bill"
                       : modal === "expense"
                         ? "Add expense"
-                        : "Receive payment"}
+                        : editingVoucherId ? "Edit payment receipt" : "Receive payment"}
                 </h2>
               </div>
               <button onClick={() => setModal(null)}>×</button>
@@ -1445,7 +1457,7 @@ export default function Home() {
                   </strong>
                 </button>
               )}
-              <button onClick={() => setModal(null)}>Cancel</button>
+              <button onClick={() => {setModal(null);setEditingVoucherId("")}}>Cancel</button>
               <button
                 className="primary"
                 disabled={saving}
@@ -1464,12 +1476,12 @@ export default function Home() {
                 {saving
                   ? "Saving…"
                   : modal === "sale"
-                    ? "Save invoice"
+                    ? editingVoucherId ? "Update invoice" : "Save invoice"
                     : modal === "purchase"
                       ? "Save purchase"
                       : modal === "expense"
                         ? "Save expense"
-                        : "Save receipt"}
+                        : editingVoucherId ? "Update receipt" : "Save receipt"}
               </button>
             </div>
           </section>

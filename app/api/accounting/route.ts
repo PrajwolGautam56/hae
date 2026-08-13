@@ -156,13 +156,13 @@ export async function GET(request: Request) {
       if (!supabase) throw new Error("Supabase server configuration is missing");
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
-        .select("id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,parties(name,place,phone,tax_no),fiscal_years(label_bs)")
+        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,parties(name,place,phone,tax_no),fiscal_years(label_bs)")
         .eq("id", voucherId)
         .single();
       if (voucherError) throw voucherError;
       const { data: lines, error: lineError } = await supabase
         .from("voucher_lines")
-        .select("id,description,quantity,rate,amount,inventory_item,products(name,sku,unit)")
+        .select("id,product_id,description,quantity,rate,amount,inventory_item,products(name,sku,unit)")
         .eq("voucher_id", voucherId)
         .order("id");
       if (lineError) throw lineError;
@@ -375,4 +375,18 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const supabase=getSupabaseAdmin();if(!supabase)throw new Error("Supabase server configuration is missing");
+    const body=await request.json();const voucherId=String(body.voucherId||"");const type=String(body.type||"");
+    if(!voucherId||!["sale","payment"].includes(type))return NextResponse.json({error:"Editable voucher is required"},{status:400});
+    const partyId=String(body.partyId||"");if(!partyId)return NextResponse.json({error:"Party is required"},{status:400});
+    const result=type==="sale"?await supabase.rpc("update_sales_invoice",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_lines:body.lines,p_discount_percent:Number(body.discountPercent||0),p_tax_percent:Number(body.taxPercent||0),p_narration:String(body.particulars||"")}):await supabase.rpc("update_payment_receipt",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_amount:Number(body.amount),p_narration:String(body.particulars||""),p_payment_mode:String(body.paymentMode||"Cash"),p_cheque_no:body.chequeNo||null,p_cheque_bank:body.chequeBank||null,p_cheque_exchange_date:body.chequeExchangeDate||null});
+    if(result.error)throw result.error;
+    const {data:voucher}=await supabase.from("vouchers").select("fiscal_year_id,company_id").eq("id",voucherId).single();
+    if(voucher)await supabase.rpc("refresh_future_opening_balances",{p_company_id:voucher.company_id,p_from_fiscal_year_id:voucher.fiscal_year_id});
+    return NextResponse.json(await snapshot(voucher?.fiscal_year_id));
+  }catch(error:any){return NextResponse.json({error:error?.message||"Could not update voucher"},{status:500})}
 }
