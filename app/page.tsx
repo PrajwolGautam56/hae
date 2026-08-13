@@ -374,6 +374,7 @@ export default function Home() {
     );
     body?.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
   }
+  async function signOut() { await fetch("/api/auth/logout", { method: "POST" }); window.location.assign("/login"); }
   async function openVoucherDetail(id: string) {
     setDetailLoading(true);
     setVoucherDetail({ id });
@@ -439,7 +440,7 @@ export default function Home() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <button>
+          <button onClick={signOut}>
             <i>⚙</i>Settings
           </button>
           <button>
@@ -451,7 +452,7 @@ export default function Home() {
               <strong>Prajwol Gautam</strong>
               <small>Administrator</small>
             </span>
-            <button>⋮</button>
+            <button aria-label="Sign out" title="Sign out" onClick={signOut}>↪</button>
           </div>
         </div>
       </aside>
