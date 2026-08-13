@@ -14,6 +14,7 @@ const nav = [
   "Cheques",
   "Parties",
   "Inventory",
+  "Stock",
   "Expenses",
   "Reports",
   "Leads",
@@ -444,9 +445,9 @@ export default function Home() {
                 setSidebarOpen(false);
               }}
             >
-              <i>{["⌂", "↗", "↙", "⇄", "▣", "♙", "▦", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
+              <i>{["⌂", "↗", "↙", "⇄", "▣", "♙", "▦", "▤", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
               {item}
-              {item === "Inventory" && lowStockCount > 0 && <b>{lowStockCount}</b>}
+              {["Inventory","Stock"].includes(item) && lowStockCount > 0 && <b>{lowStockCount}</b>}
               {item === "Cheques" && chequeCounts.pending > 0 && <b>{chequeCounts.pending}</b>}
             </button>
           ))}
@@ -948,7 +949,9 @@ export default function Home() {
                     {active === "Purchases"
                       ? "Purchase bills automatically increase inventory."
                       : active === "Inventory"
-                        ? "Manage products, prices and live stock."
+                        ? "Raw materials and packaging available for production."
+                        : active === "Stock"
+                          ? "Ready-to-sell finished and resale goods."
                         : active === "Parties"
                           ? "Customers, suppliers and their balances."
                           : active === "Payments"
@@ -965,7 +968,10 @@ export default function Home() {
                   </button>
                 )}
                 {active === "Inventory" && (
-                  <div className="hero-actions"><button className="primary soft" onClick={() => openModuleModal("product")}>＋ Add inventory item</button><button className="primary" onClick={openProduction}>⚙ Produce finished goods</button></div>
+                  <div className="hero-actions"><button className="primary soft" onClick={() => {setProductType("raw_material");openModuleModal("product")}}>＋ Add material / packaging</button><button className="primary" onClick={openProduction}>⚙ Convert / produce stock</button></div>
+                )}
+                {active === "Stock" && (
+                  <div className="hero-actions"><button className="primary soft" onClick={() => {setProductType("finished_good");openModuleModal("product")}}>＋ Add sellable item</button><button className="primary" onClick={openProduction}>⚙ Produce finished goods</button></div>
                 )}
                 {active === "Parties" && (
                   <button
@@ -1000,7 +1006,7 @@ export default function Home() {
                   </div>
                 </div>
                 <div className="table-wrap">
-                  {active === "Inventory" ? (
+                  {active === "Inventory" || active === "Stock" ? (
                     <table>
                       <thead>
                         <tr>
@@ -1014,7 +1020,7 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {products.map((p) => (
+                        {products.filter((p) => active === "Inventory" ? ["raw_material","packaging"].includes(p.item_type) : ["finished_good","resale_good"].includes(p.item_type)).map((p) => (
                           <tr key={p.id}>
                             <td>{p.sku || "—"}</td>
                             <td>
@@ -1029,6 +1035,7 @@ export default function Home() {
                             </td>
                           </tr>
                         ))}
+                        {!products.some((p) => active === "Inventory" ? ["raw_material","packaging"].includes(p.item_type) : ["finished_good","resale_good"].includes(p.item_type)) && <tr><td colSpan={7} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
                       </tbody>
                     </table>
                   ) : active === "Parties" ? (
