@@ -25,6 +25,9 @@ const nav = [
   "Team",
 ];
 
+const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
+function NavIcon({name}:{name:string}){return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={iconPaths[name]||iconPaths.Overview}/></svg>}
+
 const money = (n: number) => `Rs. ${Math.abs(n).toLocaleString("en-IN")}`;
 const localBusinessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const today = localBusinessDate();
@@ -448,6 +451,7 @@ export default function Home() {
     (product) => Number(product.stock_qty) <= Number(product.low_stock_at),
   ).length;
   const nextInvoice = nextNumbers.sale;
+  function openPrimaryAction(){if(active==="Sales")openSale();else if(active==="Purchases")openModuleModal("purchase");else if(active==="Payments")openPayment();else if(active==="Parties")openModuleModal("party");else if(active==="Inventory"||active==="Stock")openModuleModal("product");else if(active==="Expenses")openModuleModal("expense")}
   async function exportModule(module:string){
     if(module==="Inventory"||module==="Stock"){const rows=products.filter(p=>module==="Inventory"?["raw_material","packaging"].includes(p.item_type):["finished_good","resale_good"].includes(p.item_type));downloadCsv(`${module}-FY-${fiscalYear?.label_bs}`,rows,[{label:"SKU",value:(r:any)=>r.sku},{label:"Product",value:(r:any)=>r.name},{label:"Type",value:(r:any)=>r.item_type},{label:"Unit",value:(r:any)=>r.unit},{label:"Purchase price",value:(r:any)=>r.purchase_price},{label:"Sale price",value:(r:any)=>r.sale_price},{label:"Stock quantity",value:(r:any)=>r.stock_qty}]);return}
     if(module==="Parties"){downloadCsv(`Parties-FY-${fiscalYear?.label_bs}`,parties,[{label:"Party",value:(r:any)=>r.name},{label:"Address",value:(r:any)=>r.place},{label:"Phone",value:(r:any)=>r.phone},{label:"PAN",value:(r:any)=>r.tax_no},{label:"Opening balance",value:(r:any)=>r.opening_balance},{label:"Current balance",value:(r:any)=>r.balance}]);return}
@@ -463,6 +467,7 @@ export default function Home() {
             <strong>Hamro Afno</strong>
             <span>ENTERPRISES</span>
           </div>
+          <button className="sidebar-close" aria-label="Close navigation" onClick={()=>setSidebarOpen(false)}>×</button>
         </div>
         <nav>
           <p>WORKSPACE</p>
@@ -475,7 +480,7 @@ export default function Home() {
                 setSidebarOpen(false);
               }}
             >
-              <i>{["⌂", "↗", "↙", "⇄", "▣", "♙", "▦", "▤", "◫", "▥", "◉", "✓", "◷", "♟"][i]}</i>
+              <i><NavIcon name={item}/></i>
               {item}
               {["Inventory","Stock"].includes(item) && lowStockCount > 0 && <b>{lowStockCount}</b>}
               {item === "Cheques" && chequeCounts.pending > 0 && <b>{chequeCounts.pending}</b>}
@@ -552,6 +557,7 @@ export default function Home() {
                 ＋ New Transaction
               </button>
             )}
+            {["Sales","Purchases","Payments","Parties","Inventory","Stock","Expenses"].includes(active)&&<button className="mobile-quick-add" aria-label={`Add ${active}`} onClick={openPrimaryAction}>＋</button>}
           </div>
         </header>
 
@@ -1673,8 +1679,8 @@ export default function Home() {
         />
       )}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-        {[["Overview","⌂"],["Sales","↗"],["Payments","⇄"],["Parties","♙"]].map(([item,icon]) => (
-          <button key={item} className={active===item?"active":""} onClick={()=>setActive(item)}><i>{icon}</i><span>{item}</span></button>
+        {["Overview","Sales","Payments","Parties"].map((item) => (
+          <button key={item} className={active===item?"active":""} onClick={()=>setActive(item)}><i><NavIcon name={item}/></i><span>{item}</span></button>
         ))}
         <button onClick={()=>setSidebarOpen(true)}><i>☰</i><span>More</span></button>
       </nav>
