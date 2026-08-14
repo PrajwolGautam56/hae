@@ -27,8 +27,16 @@ const nav = [
 
 const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
 function NavIcon({name}:{name:string}){return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={iconPaths[name]||iconPaths.Overview}/></svg>}
+const transactionIcon = (type: string) => type === "Sales Invoice" ? "Sales" : type === "Payment Received" ? "Payments" : type === "Purchase" ? "Purchases" : "Expenses";
 
 const money = (n: number) => `Rs. ${Math.abs(n).toLocaleString("en-IN")}`;
+const compactMoney = (n: number) => {
+  const value = Math.abs(Number(n) || 0);
+  if (value >= 10_000_000) return `Rs. ${(value / 10_000_000).toFixed(value >= 100_000_000 ? 0 : 1)} Cr`;
+  if (value >= 100_000) return `Rs. ${(value / 100_000).toFixed(value >= 1_000_000 ? 0 : 1)} L`;
+  if (value >= 1_000) return `Rs. ${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
+  return `Rs. ${value.toLocaleString("en-IN")}`;
+};
 const localBusinessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const today = localBusinessDate();
 const parseDate = (value: string) =>
@@ -84,6 +92,7 @@ export default function Home() {
   const [formParty, setFormParty] = useState("");
   const [parties, setParties] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [monthlyPerformance, setMonthlyPerformance] = useState<any[]>([]);
   const [company, setCompany] = useState<any>({ name: "Hamro Afno Enterprises" });
   const [totals, setTotals] = useState({
     sales: 0,
@@ -176,6 +185,7 @@ export default function Home() {
       })),
     );
     setTotals(data.totals);
+    setMonthlyPerformance(data.monthlyPerformance || []);
     setNextNumbers(data.nextNumbers || { sale: 1, receipt: 1, purchase: 1, expense: 1 });
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
@@ -450,6 +460,12 @@ export default function Home() {
   const lowStockCount = products.filter(
     (product) => Number(product.stock_qty) <= Number(product.low_stock_at),
   ).length;
+  const performanceMax = Math.max(
+    1,
+    ...monthlyPerformance.flatMap((month) => [Number(month.sales || 0), Number(month.collections || 0)]),
+  );
+  const recentTransactions = transactions.slice(0, 8);
+  const topOutstanding = visibleParties.filter((party) => Number(party.balance) > 0).slice(0, 6);
   const nextInvoice = nextNumbers.sale;
   function openPrimaryAction(){if(active==="Sales")openSale();else if(active==="Purchases")openModuleModal("purchase");else if(active==="Payments")openPayment();else if(active==="Parties")openModuleModal("party");else if(active==="Inventory"||active==="Stock")openModuleModal("product");else if(active==="Expenses")openModuleModal("expense")}
   async function exportModule(module:string){
@@ -600,93 +616,31 @@ export default function Home() {
                   <span>▣</span><div><strong>{chequeCounts.dueToday} cheques to exchange today</strong><small>{chequeCounts.overdue} overdue cheque{chequeCounts.overdue === 1 ? "" : "s"} need attention</small></div><b>View cheque register →</b>
                 </button>
               )}
-              <div className="summary-grid">
-                <article>
-                  <div className="stat-head">
-                    <span className="stat-icon blue">↗</span>
-                    <button>•••</button>
-                  </div>
-                  <p>TOTAL SALES</p>
-                  <h2>{money(totals.sales)}</h2>
-                  <small>Recorded in Supabase</small>
-                  <div className="spark blue-spark">
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                  </div>
-                </article>
-                <article>
-                  <div className="stat-head">
-                    <span className="stat-icon orange">◔</span>
-                    <button>•••</button>
-                  </div>
-                  <p>RECEIVABLE</p>
-                  <h2>{money(totals.receivable)}</h2>
-                  <small>Current party balances</small>
-                  <div className="spark orange-spark">
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                  </div>
-                </article>
-                <article>
-                  <div className="stat-head">
-                    <span className="stat-icon green">↙</span>
-                    <button>•••</button>
-                  </div>
-                  <p>CASH RECEIVED</p>
-                  <h2>{money(totals.received)}</h2>
-                  <small>Saved payment receipts</small>
-                  <div className="spark green-spark">
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                  </div>
-                </article>
-                <article>
-                  <div className="stat-head">
-                    <span className="stat-icon violet">▦</span>
-                    <button>•••</button>
-                  </div>
-                  <p>STOCK VALUE</p>
-                  <h2>{money(stockValue)}</h2>
-                  <small>
-                    <mark className="redmark">{lowStockCount} items</mark> low in stock
-                  </small>
-                  <div className="spark violet-spark">
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                    <i></i>
-                  </div>
-                </article>
-              </div>
+              <section className="overview-stats" aria-label="Fiscal year summary">
+                <button className="overview-stat" onClick={() => setActive("Sales")}>
+                  <span className="overview-stat-icon sales"><NavIcon name="Sales" /></span>
+                  <span><small>Total sales</small><strong>{compactMoney(totals.sales)}</strong><em>FY {fiscalYear?.label_bs}</em></span>
+                </button>
+                <button className="overview-stat" onClick={() => setActive("Parties")}>
+                  <span className="overview-stat-icon due"><NavIcon name="Parties" /></span>
+                  <span><small>To collect</small><strong>{compactMoney(totals.receivable)}</strong><em>From {parties.filter((party) => Number(party.balance) > 0).length} parties</em></span>
+                </button>
+                <button className="overview-stat" onClick={() => setActive("Payments")}>
+                  <span className="overview-stat-icon collected"><NavIcon name="Payments" /></span>
+                  <span><small>Collections</small><strong>{compactMoney(totals.received)}</strong><em>Payment receipts</em></span>
+                </button>
+                <button className="overview-stat" onClick={() => setActive("Stock")}>
+                  <span className="overview-stat-icon stock"><NavIcon name="Stock" /></span>
+                  <span><small>Stock value</small><strong>{compactMoney(stockValue)}</strong><em>{lowStockCount} low-stock item{lowStockCount === 1 ? "" : "s"}</em></span>
+                </button>
+              </section>
 
               <div className="dashboard-grid">
                 <article className="activity card">
                   <div className="card-title">
                     <div>
                       <h3>Sales & Collections</h3>
-                      <p>Monthly performance overview</p>
+                      <p>Last six Nepali months · FY {fiscalYear?.label_bs}</p>
                     </div>
                     <div className="legend">
                       <span>
@@ -695,37 +649,19 @@ export default function Home() {
                       <span>
                         <i className="leg-cash"></i>Collections
                       </span>
-                      <button>•••</button>
                     </div>
                   </div>
-                  <div className="chart">
-                    <div className="ylabels">
-                      <span>800k</span>
-                      <span>600k</span>
-                      <span>400k</span>
-                      <span>200k</span>
-                      <span>0</span>
-                    </div>
-                    <div className="plot">
-                      <div className="gridline g1"></div>
-                      <div className="gridline g2"></div>
-                      <div className="gridline g3"></div>
-                      <div className="gridline g4"></div>
-                      <div className="chart-lines">
-                        <div className="line sales-line"></div>
-                        <div className="line cash-line"></div>
-                        <span className="point p1"></span>
-                        <span className="point p2"></span>
+                  <div className="performance-chart" aria-label="Monthly sales and collections chart">
+                    {monthlyPerformance.map((month) => (
+                      <div className="performance-month" key={`${month.year}-${month.month}`}>
+                        <div className="performance-bars">
+                          <i className="performance-bar sales" title={`Sales ${money(month.sales)}`} style={{ height: `${Math.max(month.sales ? 7 : 1, (Number(month.sales) / performanceMax) * 100)}%` }} />
+                          <i className="performance-bar collections" title={`Collections ${money(month.collections)}`} style={{ height: `${Math.max(month.collections ? 7 : 1, (Number(month.collections) / performanceMax) * 100)}%` }} />
+                        </div>
+                        <strong>{month.label}</strong>
                       </div>
-                      <div className="xlabels">
-                        <span>Feb</span>
-                        <span>Mar</span>
-                        <span>Apr</span>
-                        <span>May</span>
-                        <span>Jun</span>
-                        <span>Jul</span>
-                      </div>
-                    </div>
+                    ))}
+                    {!monthlyPerformance.length && <div className="dashboard-empty">Monthly figures will appear after the first transaction.</div>}
                   </div>
                 </article>
 
@@ -740,7 +676,7 @@ export default function Home() {
                     <button
                       onClick={openSale}
                     >
-                      <i className="qa-blue">↗</i>
+                      <i className="qa-blue"><NavIcon name="Sales" /></i>
                       <span>
                         <strong>Sales Invoice</strong>
                         <small>Create a new bill</small>
@@ -749,21 +685,21 @@ export default function Home() {
                     <button
                       onClick={openPayment}
                     >
-                      <i className="qa-green">↓</i>
+                      <i className="qa-green"><NavIcon name="Payments" /></i>
                       <span>
                         <strong>Receive Payment</strong>
                         <small>Cash, bank or cheque</small>
                       </span>
                     </button>
                     <button onClick={() => openModuleModal("purchase")}>
-                      <i className="qa-orange">↙</i>
+                      <i className="qa-orange"><NavIcon name="Purchases" /></i>
                       <span>
                         <strong>Add Purchase</strong>
                         <small>Stock or expense</small>
                       </span>
                     </button>
                     <button onClick={() => openModuleModal("expense")}>
-                      <i className="qa-violet">◫</i>
+                      <i className="qa-violet"><NavIcon name="Expenses" /></i>
                       <span>
                         <strong>Add Expense</strong>
                         <small>Record office expense</small>
@@ -800,11 +736,11 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {transactions.map((t, i) => (
-                          <tr key={i}>
+                        {recentTransactions.map((t, i) => (
+                          <tr key={t.id} className="clickable-voucher" tabIndex={0} onClick={() => openVoucherDetail(t.id)} onKeyDown={(event) => event.key === "Enter" && openVoucherDetail(t.id)}>
                             <td>
                               <span className={`tx-icon t${i % 5}`}>
-                                {["↗", "↓", "↙", "↗", "◫"][i % 5]}
+                                <NavIcon name={transactionIcon(t.type)} />
                               </span>
                               <div>
                                 <strong>{t.type}</strong>
@@ -823,11 +759,22 @@ export default function Home() {
                             <td className="credit">
                               {t.credit ? money(t.credit) : "—"}
                             </td>
-                            <td>•••</td>
+                            <td><span className="row-arrow">›</span></td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="mobile-transaction-list">
+                    {recentTransactions.map((t, i) => (
+                      <button key={t.id} onClick={() => openVoucherDetail(t.id)}>
+                        <span className={`tx-icon t${i % 5}`}><NavIcon name={transactionIcon(t.type)} /></span>
+                        <span className="mobile-transaction-main"><strong>{t.type}</strong><small>{t.party} · {calendar === "BS" ? bsDate(t.date) : adDate(t.date)}</small></span>
+                        <span className={t.credit ? "credit" : "debit"}><strong>{money(t.credit || t.debit)}</strong><small>{t.ref}</small></span>
+                        <span className="row-arrow">›</span>
+                      </button>
+                    ))}
+                    {!recentTransactions.length && <div className="dashboard-empty">No transactions in this fiscal year.</div>}
                   </div>
                 </article>
 
@@ -853,7 +800,7 @@ export default function Home() {
                     />
                   </div>
                   <div className="party-list">
-                    {visibleParties.map((p) => (
+                    {topOutstanding.map((p) => (
                       <button
                         key={p.name}
                         onClick={() => {
@@ -874,6 +821,7 @@ export default function Home() {
                         </span>
                       </button>
                     ))}
+                    {!topOutstanding.length && <div className="dashboard-empty">No outstanding party balance.</div>}
                   </div>
                 </article>
               </div>

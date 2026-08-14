@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
+import { adToBsParts, bsMonths } from "../../../lib/nepali-date";
 export const dynamic = "force-dynamic";
 
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -17,10 +18,13 @@ async function accountingContext(requestedFy?:string){
 
 async function snapshot(requestedFy?: string) {
   const {supabase,company,fiscalYears,fiscalYear}=await accountingContext(requestedFy);
+  const today = businessDate();
   const [
     { data: parties, error: partyError },
     { data: openings, error: openingError },
     { data: vouchers, error: voucherError },
+    { data: fiscalVouchers, error: fiscalVoucherError },
+    { data: partyLedger, error: partyLedgerError },
     { data: products, error: productError },
     { data: sequences, error: sequenceError },
   ] = await Promise.all([
@@ -36,12 +40,23 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,parties(name),ledger_entries(debit,credit)",
+        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,parties(name)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(50),
+    supabase
+      .from("vouchers")
+      .select("voucher_type,voucher_date,total")
+      .eq("fiscal_year_id", fiscalYear.id)
+      .order("voucher_date"),
+    supabase
+      .from("ledger_entries")
+      .select("party_id,debit,credit")
+      .eq("company_id", company.id)
+      .gte("entry_date", fiscalYear.start_ad)
+      .lte("entry_date", fiscalYear.end_ad),
     supabase
       .from("products")
       .select(
@@ -55,20 +70,19 @@ async function snapshot(requestedFy?: string) {
       .select("voucher_type,last_number")
       .eq("fiscal_year_id", fiscalYear.id),
   ]);
-  if (partyError || openingError || voucherError || productError || sequenceError)
-    throw partyError || openingError || voucherError || productError || sequenceError;
+  if (partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError)
+    throw partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError;
   const productRows = (products || []).map((row:any) => ({ ...row, item_type: row.item_type || "finished_good" }));
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
   );
   const movement = new Map<string, number>();
-  for (const v of vouchers || [])
-    for (const e of v.ledger_entries || [])
-      if (v.party_id)
-        movement.set(
-          v.party_id,
-          (movement.get(v.party_id) || 0) + Number(e.debit) - Number(e.credit),
-        );
+  for (const entry of partyLedger || [])
+    if (entry.party_id)
+      movement.set(
+        entry.party_id,
+        (movement.get(entry.party_id) || 0) + Number(entry.debit) - Number(entry.credit),
+      );
   const partyRows = (parties || [])
     .map((p) => {
       const opening = openingMap.get(p.id) ?? Number(p.opening_balance);
@@ -104,10 +118,31 @@ async function snapshot(requestedFy?: string) {
     expenses: 0,
     receivable: partyRows.reduce((s, p) => s + Math.max(0, p.balance), 0),
   };
-  for (const v of vouchers || []) {
+  for (const v of fiscalVouchers || []) {
     if (v.voucher_type === "sale") totals.sales += Number(v.total);
     if (v.voucher_type === "receipt") totals.received += Number(v.total);
     if (v.voucher_type === "expense") totals.expenses += Number(v.total);
+  }
+  const chartEnd = today < fiscalYear.start_ad
+    ? fiscalYear.start_ad
+    : today > fiscalYear.end_ad
+      ? fiscalYear.end_ad
+      : today;
+  const currentBs = adToBsParts(chartEnd);
+  const monthKeys = Array.from({ length: 6 }, (_, index) => {
+    const offset = 5 - index;
+    const absoluteMonth = currentBs.year * 12 + currentBs.month - 1 - offset;
+    const year = Math.floor(absoluteMonth / 12);
+    const month = (absoluteMonth % 12) + 1;
+    return { key: `${year}-${month}`, year, month, label: bsMonths[month - 1] };
+  });
+  const performance = new Map(monthKeys.map((month) => [month.key, { ...month, sales: 0, collections: 0 }]));
+  for (const voucher of fiscalVouchers || []) {
+    const parts = adToBsParts(voucher.voucher_date);
+    const bucket = performance.get(`${parts.year}-${parts.month}`);
+    if (!bucket) continue;
+    if (voucher.voucher_type === "sale") bucket.sales += Number(voucher.total);
+    if (voucher.voucher_type === "receipt") bucket.collections += Number(voucher.total);
   }
   return {
     source: "supabase",
@@ -118,6 +153,7 @@ async function snapshot(requestedFy?: string) {
     products: productRows,
     transactions,
     totals,
+    monthlyPerformance: monthKeys.map((month) => performance.get(month.key)),
     nextNumbers: Object.fromEntries(
       ["sale", "receipt", "purchase", "expense"].map((type) => [
         type,
