@@ -258,7 +258,7 @@ export default function Home() {
       setNotice("Please enter a valid amount");
       return;
     }
-    if ((modal === "payment" || modal === "expense") && !moneyAccountId) {
+    if ((modal === "expense" || (modal === "payment" && paymentMode !== "Cheque")) && !moneyAccountId) {
       setNotice(modal === "payment" ? "Select where the payment was received" : "Select the cash or bank account used");
       return;
     }
@@ -1481,7 +1481,7 @@ export default function Home() {
                       Payment mode
                       <select
                         value={paymentMode}
-                        onChange={(e) => {const mode=e.target.value;setPaymentMode(mode);const eligible=moneyAccounts.filter((account)=>mode==="Cash"?["employee_wallet","office_cash"].includes(account.account_type):account.account_type==="bank");setMoneyAccountId(eligible[0]?.id||"");if(mode==="Cheque"&&!chequeExchangeDate)setChequeExchangeDate(transactionDate)}}
+                        onChange={(e) => {const mode=e.target.value;setPaymentMode(mode);const eligible=moneyAccounts.filter((account)=>mode==="Cash"?["employee_wallet","office_cash"].includes(account.account_type):account.account_type==="bank");setMoneyAccountId(mode==="Cheque"?"":eligible[0]?.id||"");if(mode==="Cheque"&&!chequeExchangeDate)setChequeExchangeDate(transactionDate)}}
                       >
                         <option>Cash</option>
                         <option>Bank transfer</option>
@@ -1490,7 +1490,7 @@ export default function Home() {
                       </select>
                     </label>
                   )}
-                  {modal === "payment" && <><label>Collected / handled by<select value={handledBy} onChange={(e)=>{const memberId=e.target.value;setHandledBy(memberId);if(paymentMode==="Cash")setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="employee_wallet"&&account.team_member_id===memberId)?.id||moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||"")}}>{members.map((member)=><option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}</select></label><label>Received into<select value={moneyAccountId} onChange={(e)=>setMoneyAccountId(e.target.value)}><option value="">Select account</option>{moneyAccounts.filter((account)=>paymentMode==="Cash"?["employee_wallet","office_cash"].includes(account.account_type):account.account_type==="bank").map((account)=><option key={account.id} value={account.id}>{account.name} · {money(Number(account.balance))}</option>)}</select></label></>}
+                  {modal === "payment" && <><label>Collected / handled by<select value={handledBy} onChange={(e)=>{const memberId=e.target.value;setHandledBy(memberId);if(paymentMode==="Cash")setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="employee_wallet"&&account.team_member_id===memberId)?.id||moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||"")}}>{members.map((member)=><option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}</select></label>{paymentMode!=="Cheque"?<label>Received into<select value={moneyAccountId} onChange={(e)=>setMoneyAccountId(e.target.value)}><option value="">Select account</option>{moneyAccounts.filter((account)=>paymentMode==="Cash"?["employee_wallet","office_cash"].includes(account.account_type):account.account_type==="bank").map((account)=><option key={account.id} value={account.id}>{account.name} · {money(Number(account.balance))}</option>)}</select></label>:<div className="cheque-holding-note"><strong>Cheque received</strong><span>No cash or bank balance changes until this cheque is cleared from the Cheque Register.</span></div>}</>}
                   {modal === "expense" && <><label>Paid from<select value={moneyAccountId} onChange={(e)=>setMoneyAccountId(e.target.value)}><option value="">Select cash / bank</option>{moneyAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {money(Number(account.balance))}</option>)}</select></label><label>Payment mode<select value={paymentMode} onChange={(e)=>setPaymentMode(e.target.value)}><option>Cash</option><option>Bank transfer</option><option>QR</option><option>Cheque</option></select></label></>}
                   {modal === "payment" && paymentMode === "Cheque" && (
                     <div className="cheque-fields full">

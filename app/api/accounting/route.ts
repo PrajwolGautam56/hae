@@ -305,7 +305,7 @@ export async function POST(request: Request) {
       if (!body.chequeExchangeDate)
         return NextResponse.json({ error: "Cheque exchange date is required" }, { status: 400 });
     }
-    if (["payment", "expense"].includes(type) && !body.moneyAccountId)
+    if ((type === "expense" || (type === "payment" && String(body.paymentMode) !== "Cheque")) && !body.moneyAccountId)
       return NextResponse.json({ error: type === "payment" ? "Select where the payment was received" : "Select the cash or bank account used" }, { status: 400 });
     let partyId = body.partyId ? String(body.partyId) : null;
     const state = initialState;
@@ -444,17 +444,23 @@ export async function PUT(request: Request) {
     const voucherId=String(body.voucherId||"");const type=String(body.type||"");
     if(!voucherId||!["sale","payment"].includes(type))return NextResponse.json({error:"Editable voucher is required"},{status:400});
     const partyId=String(body.partyId||"");if(!partyId)return NextResponse.json({error:"Party is required"},{status:400});
-    if(type==="payment"&&!body.moneyAccountId)return NextResponse.json({error:"Select where the payment was received"},{status:400});
+    if(type==="payment"&&String(body.paymentMode)!=="Cheque"&&!body.moneyAccountId)return NextResponse.json({error:"Select where the payment was received"},{status:400});
     const result=type==="sale"?await supabase.rpc("update_sales_invoice",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_lines:body.lines,p_discount_percent:Number(body.discountPercent||0),p_tax_percent:Number(body.taxPercent||0),p_narration:String(body.particulars||"")}):await supabase.rpc("update_payment_receipt",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_amount:Number(body.amount),p_narration:String(body.particulars||""),p_payment_mode:String(body.paymentMode||"Cash"),p_cheque_no:body.chequeNo||null,p_cheque_bank:body.chequeBank||null,p_cheque_exchange_date:body.chequeExchangeDate||null});
     if(result.error)throw result.error;
     if(type==="payment"){
       const pending=String(body.paymentMode)==="Cheque";
-      const {error:attributionError}=await supabase.from("vouchers").update({handled_by:body.handledBy||currentMember.id,money_account_id:body.moneyAccountId}).eq("id",voucherId);if(attributionError)throw attributionError;
-      const movementValues={to_account_id:body.moneyAccountId,from_account_id:null,amount:Number(body.amount),movement_date:String(body.date),payment_mode:String(body.paymentMode||"Cash"),handled_by:body.handledBy||currentMember.id,title:String(body.particulars||"Payment received"),status:pending?"pending":"posted",posted_at:pending?null:new Date().toISOString()};
-      const {data:updatedMovements,error:movementError}=await supabase.from("money_movements").update(movementValues).eq("voucher_id",voucherId).select("id");if(movementError)throw movementError;
-      if(!updatedMovements?.length){
+      const voucherUpdate:any={handled_by:body.handledBy||currentMember.id,money_account_id:pending?null:body.moneyAccountId};
+      if(pending){voucherUpdate.cheque_status="pending";voucherUpdate.cheque_cleared_at=null}
+      const {error:attributionError}=await supabase.from("vouchers").update(voucherUpdate).eq("id",voucherId);if(attributionError)throw attributionError;
+      if(pending){
+        const {error:pendingMovementError}=await supabase.from("money_movements").update({amount:Number(body.amount),movement_date:String(body.date),payment_mode:"Cheque",handled_by:body.handledBy||currentMember.id,title:String(body.particulars||"Cheque received"),status:"pending",posted_at:null}).eq("voucher_id",voucherId);if(pendingMovementError)throw pendingMovementError;
+      }else{
+        const movementValues={to_account_id:body.moneyAccountId,from_account_id:null,amount:Number(body.amount),movement_date:String(body.date),payment_mode:String(body.paymentMode||"Cash"),handled_by:body.handledBy||currentMember.id,title:String(body.particulars||"Payment received"),status:"posted",posted_at:new Date().toISOString()};
+        const {data:updatedMovements,error:movementError}=await supabase.from("money_movements").update(movementValues).eq("voucher_id",voucherId).select("id");if(movementError)throw movementError;
+        if(!updatedMovements?.length){
         const {data:legacyVoucher,error:legacyError}=await supabase.from("vouchers").select("company_id,fiscal_year_id,party_id,voucher_no").eq("id",voucherId).single();if(legacyError)throw legacyError;
         const {error:insertMovementError}=await supabase.from("money_movements").insert({...movementValues,company_id:legacyVoucher.company_id,fiscal_year_id:legacyVoucher.fiscal_year_id,voucher_id:voucherId,movement_type:"customer_receipt",party_id:legacyVoucher.party_id,generated_by:currentMember.id,reference:legacyVoucher.voucher_no,notes:String(body.particulars||"")});if(insertMovementError)throw insertMovementError;
+        }
       }
     }
     const {data:voucher}=await supabase.from("vouchers").select("fiscal_year_id,company_id").eq("id",voucherId).single();
