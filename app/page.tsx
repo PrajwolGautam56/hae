@@ -466,6 +466,20 @@ export default function Home() {
   );
   const recentTransactions = transactions.slice(0, 8);
   const topOutstanding = visibleParties.filter((party) => Number(party.balance) > 0).slice(0, 6);
+  const registerTransactions = transactions.filter((transaction) =>
+    active === "Purchases"
+      ? transaction.type === "Purchase"
+      : active === "Payments"
+        ? transaction.type === "Payment Received"
+        : active === "Expenses"
+          ? transaction.type === "Office Expense"
+          : true,
+  );
+  const registerProducts = products.filter((product) =>
+    active === "Inventory"
+      ? ["raw_material", "packaging"].includes(product.item_type)
+      : ["finished_good", "resale_good"].includes(product.item_type),
+  );
   const nextInvoice = nextNumbers.sale;
   function openPrimaryAction(){if(active==="Sales")openSale();else if(active==="Purchases")openModuleModal("purchase");else if(active==="Payments")openPayment();else if(active==="Parties")openModuleModal("party");else if(active==="Inventory"||active==="Stock")openModuleModal("product");else if(active==="Expenses")openModuleModal("expense")}
   async function exportModule(module:string){
@@ -907,6 +921,16 @@ export default function Home() {
                     </tbody>
                   </table>
                 </div>
+                <div className="mobile-register-list">
+                  {salesTransactions.map((transaction) => (
+                    <button key={transaction.id} onClick={() => openVoucherDetail(transaction.id)}>
+                      <span><strong>Invoice #{transaction.sequence_no || transaction.ref}</strong><small>{transaction.party}</small></span>
+                      <span className="mobile-register-amount"><strong>{money(transaction.debit)}</strong><small>{calendar === "BS" ? bsDate(transaction.date) : adDate(transaction.date)}</small></span>
+                      <span className="mobile-register-meta"><span>{transaction.ref}</span><span className="paid-chip">Posted</span></span>
+                    </button>
+                  ))}
+                  {!salesTransactions.length && <div className="dashboard-empty">No sales invoice in this fiscal year. Next invoice starts at 1.</div>}
+                </div>
               </article>
             </section>
           ) : active === "Cheques" ? (
@@ -1001,7 +1025,7 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {products.filter((p) => active === "Inventory" ? ["raw_material","packaging"].includes(p.item_type) : ["finished_good","resale_good"].includes(p.item_type)).map((p) => (
+                        {registerProducts.map((p) => (
                           <tr key={p.id}>
                             <td>{p.sku || "—"}</td>
                             <td>
@@ -1017,7 +1041,7 @@ export default function Home() {
                             <td><button className="table-action" onClick={() => editProduct(p)}>Edit</button></td>
                           </tr>
                         ))}
-                        {!products.some((p) => active === "Inventory" ? ["raw_material","packaging"].includes(p.item_type) : ["finished_good","resale_good"].includes(p.item_type)) && <tr><td colSpan={8} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
+                        {!registerProducts.length && <tr><td colSpan={8} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
                       </tbody>
                     </table>
                   ) : active === "Parties" ? (
@@ -1072,17 +1096,7 @@ export default function Home() {
                         </tr>
                       </thead>
                       <tbody>
-                        {transactions
-                          .filter((t) =>
-                            active === "Purchases"
-                              ? t.type === "Purchase"
-                              : active === "Payments"
-                                ? t.type === "Payment Received"
-                                : active === "Expenses"
-                                  ? t.type === "Office Expense"
-                                  : true,
-                          )
-                          .map((t) => (
+                        {registerTransactions.map((t) => (
                             <tr key={t.id} className="clickable-voucher" tabIndex={0} onClick={() => openVoucherDetail(t.id)} onKeyDown={(e) => e.key === "Enter" && openVoucherDetail(t.id)}>
                               <td>
                                 <strong>{t.ref}</strong>
@@ -1098,6 +1112,42 @@ export default function Home() {
                           ))}
                       </tbody>
                     </table>
+                  )}
+                </div>
+                <div className="mobile-register-list">
+                  {active === "Inventory" || active === "Stock" ? (
+                    <>
+                      {registerProducts.map((product) => (
+                        <div className="mobile-register-card" key={product.id}>
+                          <span><strong>{product.name}</strong><small>{product.sku || "No SKU"} · {({raw_material:"Raw material",packaging:"Packaging",finished_good:"Finished product",resale_good:"Resale product"} as any)[product.item_type] || "Finished product"}</small></span>
+                          <span className="mobile-register-amount"><strong>{product.stock_qty} {product.unit}</strong><small>In stock</small></span>
+                          <span className="mobile-register-meta"><span>Sale {money(Number(product.sale_price))}</span><button className="mobile-register-edit" onClick={() => editProduct(product)}>Edit</button></span>
+                        </div>
+                      ))}
+                      {!registerProducts.length && <div className="dashboard-empty">{active === "Inventory" ? "No raw material or packaging yet." : "No sellable stock yet."}</div>}
+                    </>
+                  ) : active === "Parties" ? (
+                    <>
+                      {parties.map((party) => (
+                        <button key={party.id} onClick={() => { setReportPartyId(party.id); setActive("Reports"); }}>
+                          <span><strong>{party.name}</strong><small>{[party.place, party.phone].filter(Boolean).join(" · ") || "No contact details"}</small></span>
+                          <span className="mobile-register-amount"><strong>{money(Number(party.balance))}</strong><small>{Number(party.balance) < 0 ? "Advance" : "To receive"}</small></span>
+                          <span className="mobile-register-meta"><span>{party.tax_no ? `PAN ${party.tax_no}` : "PAN not added"}</span><span>View ledger ›</span></span>
+                        </button>
+                      ))}
+                      {!parties.length && <div className="dashboard-empty">No parties added yet.</div>}
+                    </>
+                  ) : (
+                    <>
+                      {registerTransactions.map((transaction) => (
+                        <button key={transaction.id} onClick={() => openVoucherDetail(transaction.id)}>
+                          <span><strong>{transaction.ref}</strong><small>{transaction.party}</small></span>
+                          <span className="mobile-register-amount"><strong>{money(transaction.debit || transaction.credit)}</strong><small>{calendar === "BS" ? bsDate(transaction.date) : adDate(transaction.date)}</small></span>
+                          <span className="mobile-register-meta"><span>{transaction.type}</span><span>View details ›</span></span>
+                        </button>
+                      ))}
+                      {!registerTransactions.length && <div className="dashboard-empty">No {active.toLowerCase()} record in this fiscal year.</div>}
+                    </>
                   )}
                 </div>
               </article>
