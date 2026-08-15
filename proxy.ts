@@ -8,9 +8,19 @@ export async function proxy(request: NextRequest) {
   if (token) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-    if (url && key) {
+    const secret = process.env.SUPABASE_SECRET_KEY;
+    if (url && key && secret) {
       const validation = await fetch(`${url}/auth/v1/user`, { headers: { apikey: key, Authorization: `Bearer ${token}` }, cache: "no-store" });
-      if (validation.ok) return NextResponse.next();
+      if (validation.ok) {
+        const user = await validation.json() as { id?: string };
+        if (user.id) {
+          const memberLookup = await fetch(`${url}/rest/v1/team_members?auth_user_id=eq.${encodeURIComponent(user.id)}&active=eq.true&select=id&limit=1`, {
+            headers: { apikey: secret, Authorization: `Bearer ${secret}` },
+            cache: "no-store",
+          });
+          if (memberLookup.ok && ((await memberLookup.json()) as Array<{ id: string }>).length > 0) return NextResponse.next();
+        }
+      }
     }
   }
   if (path.startsWith("/api/")) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
