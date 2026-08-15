@@ -7,6 +7,7 @@ import { downloadCsv, printDocument } from "../lib/export-data";
 import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
 import ChequeWorkspace from "./cheque-workspace";
+import FundsWorkspace from "./funds-workspace";
 
 const nav = [
   "Overview",
@@ -17,6 +18,7 @@ const nav = [
   "Parties",
   "Inventory",
   "Stock",
+  "Cash & Bank",
   "Expenses",
   "Reports",
   "Leads",
@@ -25,7 +27,7 @@ const nav = [
   "Team",
 ];
 
-const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
+const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10","Cash & Bank":"M3 7h18v13H3zM7 7V5h10v2M7 12h4m6 0h.01M7 16h10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
 function NavIcon({name}:{name:string}){return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={iconPaths[name]||iconPaths.Overview}/></svg>}
 const transactionIcon = (type: string) => type === "Sales Invoice" ? "Sales" : type === "Payment Received" ? "Payments" : type === "Purchase" ? "Purchases" : "Expenses";
 
@@ -93,6 +95,9 @@ export default function Home() {
   const [parties, setParties] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [monthlyPerformance, setMonthlyPerformance] = useState<any[]>([]);
+  const [members, setMembers] = useState<any[]>([]);
+  const [moneyAccounts, setMoneyAccounts] = useState<any[]>([]);
+  const [currentMember, setCurrentMember] = useState<any>(null);
   const [company, setCompany] = useState<any>({ name: "Hamro Afno Enterprises" });
   const [totals, setTotals] = useState({
     sales: 0,
@@ -102,6 +107,8 @@ export default function Home() {
   const [nextNumbers, setNextNumbers] = useState({ sale: 1, receipt: 1, purchase: 1, expense: 1 });
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
+  const [handledBy, setHandledBy] = useState("");
+  const [moneyAccountId, setMoneyAccountId] = useState("");
   const [chequeNo, setChequeNo] = useState("");
   const [chequeBank, setChequeBank] = useState("");
   const [chequeExchangeDate, setChequeExchangeDate] = useState("");
@@ -177,7 +184,8 @@ export default function Home() {
           (
             {
               sale: "Sales Invoice",
-              payment: "Payment Received",
+              receipt: "Payment Received",
+              payment: "Payment Given",
               purchase: "Purchase",
               expense: "Office Expense",
             } as any
@@ -186,6 +194,9 @@ export default function Home() {
     );
     setTotals(data.totals);
     setMonthlyPerformance(data.monthlyPerformance || []);
+    setMembers(data.members || []);
+    setMoneyAccounts(data.moneyAccounts || []);
+    setCurrentMember(data.currentMember || null);
     setNextNumbers(data.nextNumbers || { sale: 1, receipt: 1, purchase: 1, expense: 1 });
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
@@ -247,6 +258,10 @@ export default function Home() {
       setNotice("Please enter a valid amount");
       return;
     }
+    if ((modal === "payment" || modal === "expense") && !moneyAccountId) {
+      setNotice(modal === "payment" ? "Select where the payment was received" : "Select the cash or bank account used");
+      return;
+    }
     if (modal === "payment" && !party && !newPartyName.trim()) {
       setNotice("Please select a party or add a new party");
       return;
@@ -274,6 +289,8 @@ export default function Home() {
         amount: Number(amount),
         particulars,
         paymentMode,
+        handledBy: handledBy || currentMember?.id,
+        moneyAccountId,
         chequeNo,
         chequeBank,
         chequeExchangeDate,
@@ -350,6 +367,8 @@ export default function Home() {
     setFormParty(parties[0]?.name || "__new__");
     setNewPartyName(""); setAmount(""); setParticulars("");
     setPaymentMode("Cash"); setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
+    const collectorId=currentMember?.id||members[0]?.id||"";setHandledBy(collectorId);
+    setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="employee_wallet"&&account.team_member_id===collectorId)?.id||moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||"");
     setPlace(""); setPhone(""); setTaxNo("");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
   }
@@ -362,6 +381,7 @@ export default function Home() {
     if (kind === "product") { setSku(""); setUnit("pcs"); setSalePrice(""); setPurchasePrice(""); setOpeningStock(""); }
     setOpeningBalance(""); setOpeningSide("debit");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
+    if(kind==="expense"){setPaymentMode("Cash");setHandledBy(currentMember?.id||"");setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||moneyAccounts[0]?.id||"")}
     if (kind === "purchase") {
       setSaleLines([emptySaleLine()]);
       setFormParty(parties[0]?.name || "__new__");
@@ -438,7 +458,7 @@ export default function Home() {
     const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type))return;
     setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setParticulars(detail.narration||"");
     if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setModal("sale");}
-    else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
+    else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
     setVoucherDetail(null);
   }
   const saleSubtotal = saleLines.reduce(
@@ -525,10 +545,10 @@ export default function Home() {
             <i>?</i>Help & Support
           </button>
           <div className="profile">
-            <div>PG</div>
+            <div>{(currentMember?.name || "Prajwol Gautam").split(" ").map((part:string)=>part[0]).slice(0,2).join("")}</div>
             <span>
-              <strong>Prajwol Gautam</strong>
-              <small>Administrator</small>
+              <strong>{currentMember?.name || "Prajwol Gautam"}</strong>
+              <small>{currentMember?.role || "Administrator"}</small>
             </span>
             <button aria-label="Sign out" title="Sign out" onClick={signOut}>↪</button>
           </div>
@@ -933,6 +953,8 @@ export default function Home() {
                 </div>
               </article>
             </section>
+          ) : active === "Cash & Bank" ? (
+            <FundsWorkspace fiscalYear={fiscalYear} onNotice={setNotice} />
           ) : active === "Cheques" ? (
             <ChequeWorkspace onNotice={setNotice} />
           ) : active === "Reports" ? (
@@ -1178,6 +1200,7 @@ export default function Home() {
                   <div><small>DATE</small><strong>{calendar === "BS" ? bsDate(voucherDetail.voucher_date) : adDate(voucherDetail.voucher_date)}</strong><span>AD {adDate(voucherDetail.voucher_date)}</span></div>
                   <div><small>{voucherDetail.voucher_type === "receipt" ? "RECEIPT NO." : "INVOICE NO."}</small><strong>{voucherDetail.sequence_no || voucherDetail.voucher_no}</strong><span>FY {voucherDetail.fiscal_years?.label_bs}</span></div>
                 </div>
+                <div className="voucher-audit"><span><small>GENERATED BY</small><strong>{voucherDetail.generator?.name || "Office"}</strong></span>{voucherDetail.handler?.name&&<span><small>COLLECTED / HANDLED BY</small><strong>{voucherDetail.handler.name}</strong></span>}{voucherDetail.money_account?.name&&<span><small>CASH / BANK ACCOUNT</small><strong>{voucherDetail.money_account.name}</strong></span>}</div>
                 {voucherDetail.lines?.length > 0 && <div className="voucher-lines"><table><thead><tr><th>#</th><th>PRODUCT / DESCRIPTION</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>{voucherDetail.lines.map((line:any,index:number)=><tr key={line.id}><td>{index+1}</td><td><strong>{line.description || line.products?.name}</strong><small>{[line.products?.sku,line.products?.unit].filter(Boolean).join(" · ")}</small></td><td>{Number(line.quantity).toLocaleString()}</td><td>{money(Number(line.rate))}</td><td><strong>{money(Number(line.amount))}</strong></td></tr>)}</tbody></table></div>}
                 {voucherDetail.voucher_type === "receipt" && <div className="receipt-panel"><div><small>AMOUNT RECEIVED</small><strong>{money(Number(voucherDetail.total))}</strong></div><div><small>PAYMENT MODE</small><strong>{voucherDetail.payment_mode || "Cash"}</strong></div>{voucherDetail.payment_mode === "Cheque" && <><div><small>CHEQUE / BANK</small><strong>{voucherDetail.cheque_no || "—"} · {voucherDetail.cheque_bank || "—"}</strong></div><div><small>CLEARANCE DATE</small><strong>{voucherDetail.cheque_exchange_date ? adDate(voucherDetail.cheque_exchange_date) : "—"}</strong><span className={`cheque-status ${voucherDetail.cheque_status}`}>{voucherDetail.cheque_status}</span></div></>}</div>}
                 {voucherDetail.voucher_type === "sale" && <div className="voucher-totals"><div><span>Subtotal</span><strong>{money(Number(voucherDetail.subtotal))}</strong></div><div><span>Discount ({Number(voucherDetail.discount_percent)}%)</span><strong>− {money(Number(voucherDetail.discount_amount))}</strong></div><div><span>VAT / Tax ({Number(voucherDetail.tax_percent)}%)</span><strong>＋ {money(Number(voucherDetail.tax_amount))}</strong></div><div className="grand"><span>Grand total</span><strong>{money(Number(voucherDetail.total))}</strong></div></div>}
@@ -1298,6 +1321,10 @@ export default function Home() {
                           : nextNumbers.expense,
                   )}
                 />
+              </label>
+              <label>
+                Generated by
+                <input readOnly value={currentMember?.name || "Signed-in employee"} />
               </label>
               {(modal === "sale" || modal === "purchase") && (
                 <div className="invoice-section-title full"><span>02</span><div><strong>Items & pricing</strong><small>Add products, quantity and rate. Scroll normally for totals.</small></div></div>
@@ -1454,14 +1481,17 @@ export default function Home() {
                       Payment mode
                       <select
                         value={paymentMode}
-                        onChange={(e) => {setPaymentMode(e.target.value);if(e.target.value==="Cheque"&&!chequeExchangeDate)setChequeExchangeDate(transactionDate)}}
+                        onChange={(e) => {const mode=e.target.value;setPaymentMode(mode);const eligible=moneyAccounts.filter((account)=>mode==="Cash"?["employee_wallet","office_cash"].includes(account.account_type):account.account_type==="bank");setMoneyAccountId(eligible[0]?.id||"");if(mode==="Cheque"&&!chequeExchangeDate)setChequeExchangeDate(transactionDate)}}
                       >
                         <option>Cash</option>
                         <option>Bank transfer</option>
+                        <option>QR</option>
                         <option>Cheque</option>
                       </select>
                     </label>
                   )}
+                  {modal === "payment" && <><label>Collected / handled by<select value={handledBy} onChange={(e)=>{const memberId=e.target.value;setHandledBy(memberId);if(paymentMode==="Cash")setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="employee_wallet"&&account.team_member_id===memberId)?.id||moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||"")}}>{members.map((member)=><option key={member.id} value={member.id}>{member.name} · {member.role}</option>)}</select></label><label>Received into<select value={moneyAccountId} onChange={(e)=>setMoneyAccountId(e.target.value)}><option value="">Select account</option>{moneyAccounts.filter((account)=>paymentMode==="Cash"?["employee_wallet","office_cash"].includes(account.account_type):account.account_type==="bank").map((account)=><option key={account.id} value={account.id}>{account.name} · {money(Number(account.balance))}</option>)}</select></label></>}
+                  {modal === "expense" && <><label>Paid from<select value={moneyAccountId} onChange={(e)=>setMoneyAccountId(e.target.value)}><option value="">Select cash / bank</option>{moneyAccounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {money(Number(account.balance))}</option>)}</select></label><label>Payment mode<select value={paymentMode} onChange={(e)=>setPaymentMode(e.target.value)}><option>Cash</option><option>Bank transfer</option><option>QR</option><option>Cheque</option></select></label></>}
                   {modal === "payment" && paymentMode === "Cheque" && (
                     <div className="cheque-fields full">
                       <div><strong>Cheque details</strong><span>This receipt stays pending until marked cleared.</span></div>

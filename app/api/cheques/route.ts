@@ -25,7 +25,10 @@ export async function POST(request:Request){
     const db=getSupabaseAdmin();if(!db)throw new Error("Supabase server configuration is missing");
     const body=await request.json();const status=String(body.status||"");
     if(!["pending","cleared","cancelled"].includes(status))return NextResponse.json({error:"Invalid cheque status"},{status:400});
-    const {error}=await db.from("vouchers").update({cheque_status:status,cheque_cleared_at:status==="cleared"?new Date().toISOString():null}).eq("id",body.chequeId).eq("payment_mode","Cheque");
-    if(error)throw error;return NextResponse.json(await list());
+    const clearedAt=status==="cleared"?new Date().toISOString():null;
+    const {error}=await db.from("vouchers").update({cheque_status:status,cheque_cleared_at:clearedAt}).eq("id",body.chequeId).eq("payment_mode","Cheque");
+    if(error)throw error;
+    const {error:movementError}=await db.from("money_movements").update({status:status==="cleared"?"posted":status,posted_at:clearedAt}).eq("voucher_id",body.chequeId);
+    if(movementError)throw movementError;return NextResponse.json(await list());
   }catch(error:any){return NextResponse.json({error:error?.message||"Cheque update failed"},{status:500})}
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { adToBsParts, bsMonths } from "../../../lib/nepali-date";
+import { getCurrentMember } from "../../../lib/current-member";
 export const dynamic = "force-dynamic";
 
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -27,6 +28,8 @@ async function snapshot(requestedFy?: string) {
     { data: partyLedger, error: partyLedgerError },
     { data: products, error: productError },
     { data: sequences, error: sequenceError },
+    { data: members, error: memberError },
+    { data: moneyAccounts, error: moneyAccountError },
   ] = await Promise.all([
     supabase
       .from("parties")
@@ -40,7 +43,7 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,parties(name)",
+        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts(name,account_type)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
@@ -69,9 +72,12 @@ async function snapshot(requestedFy?: string) {
       .from("voucher_sequences")
       .select("voucher_type,last_number")
       .eq("fiscal_year_id", fiscalYear.id),
+    supabase.from("team_members").select("id,name,email,role,active").eq("company_id", company.id).eq("active", true).order("name"),
+    supabase.from("money_account_balances").select("id,account_type,name,bank_name,account_number,team_member_id,opening_balance,balance,active").eq("company_id", company.id).eq("active", true).order("account_type").order("name"),
   ]);
-  if (partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError)
-    throw partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError;
+  if (partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError || memberError || moneyAccountError)
+    throw partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError || memberError || moneyAccountError;
+  const currentMember = await getCurrentMember(supabase);
   const productRows = (products || []).map((row:any) => ({ ...row, item_type: row.item_type || "finished_good" }));
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
@@ -95,7 +101,7 @@ async function snapshot(requestedFy?: string) {
     .sort((a, b) => b.balance - a.balance);
   const transactions = (vouchers || []).map((v) => ({
     id: v.id,
-    type: v.voucher_type === "receipt" ? "payment" : v.voucher_type,
+    type: v.voucher_type,
     ref: v.voucher_no,
     date: v.voucher_date,
     particulars: v.narration,
@@ -111,6 +117,11 @@ async function snapshot(requestedFy?: string) {
       (v.parties as any)?.name ||
       (v.voucher_type === "expense" ? "Office Expense" : "Cash / General"),
     sequence_no: v.sequence_no,
+    generated_by: v.generated_by,
+    handled_by: v.handled_by,
+    generated_by_name: (v.generator as any)?.name || "Office",
+    handled_by_name: (v.handler as any)?.name || null,
+    money_account_name: (v.money_account as any)?.name || null,
   }));
   const totals = {
     sales: 0,
@@ -154,6 +165,11 @@ async function snapshot(requestedFy?: string) {
     transactions,
     totals,
     monthlyPerformance: monthKeys.map((month) => performance.get(month.key)),
+    members: members || [],
+    moneyAccounts: (moneyAccounts || [])
+      .filter((account:any) => ["admin", "manager", "accountant"].includes(currentMember?.role) || account.account_type !== "employee_wallet" || account.team_member_id === currentMember?.id)
+      .map((account:any) => ({ ...account, opening_balance: Number(account.opening_balance), balance: Number(account.balance) })),
+    currentMember,
     nextNumbers: Object.fromEntries(
       ["sale", "receipt", "purchase", "expense"].map((type) => [
         type,
@@ -169,9 +185,11 @@ export async function GET(request: Request) {
     if (voucherId) {
       const supabase = getSupabaseAdmin();
       if (!supabase) throw new Error("Supabase server configuration is missing");
+      const currentMember = await getCurrentMember(supabase);
+      if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
-        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,parties(name,place,phone,tax_no),fiscal_years(label_bs)")
+        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties(name,place,phone,tax_no),fiscal_years(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts(name,account_type)")
         .eq("id", voucherId)
         .single();
       if (voucherError) throw voucherError;
@@ -198,6 +216,8 @@ export async function POST(request: Request) {
   try {
     const supabase = getSupabaseAdmin();
     if (!supabase) throw new Error("Supabase server configuration is missing");
+    const currentMember = await getCurrentMember(supabase);
+    if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
     const body = (await request.json()) as Record<string, unknown>;
     const type = String(body.type || "");
     const initialState = await accountingContext(String(body.fiscalYearId || ""));
@@ -285,6 +305,8 @@ export async function POST(request: Request) {
       if (!body.chequeExchangeDate)
         return NextResponse.json({ error: "Cheque exchange date is required" }, { status: 400 });
     }
+    if (["payment", "expense"].includes(type) && !body.moneyAccountId)
+      return NextResponse.json({ error: type === "payment" ? "Select where the payment was received" : "Select the cash or bank account used" }, { status: 400 });
     let partyId = body.partyId ? String(body.partyId) : null;
     const state = initialState;
     if (!partyId && body.partyName) {
@@ -349,7 +371,11 @@ export async function POST(request: Request) {
               p_narration: String(body.particulars || ""),
               p_payment_mode: body.paymentMode
                 ? String(body.paymentMode)
-                : null,
+                : "Cash",
+              p_generated_by: currentMember.id,
+              p_handled_by: body.handledBy ? String(body.handledBy) : currentMember.id,
+              p_money_account_id: body.moneyAccountId ? String(body.moneyAccountId) : null,
+              p_movement_status: type === "payment" && String(body.paymentMode) === "Cheque" ? "pending" : "posted",
             });
     if (historicalYear) {
       const { error: restoreError } = await supabase
@@ -359,6 +385,13 @@ export async function POST(request: Request) {
       if (restoreError) throw restoreError;
     }
     if (result.error) throw result.error;
+    if (["sale", "purchase"].includes(type)) {
+      const voucherId = (result.data as any)?.id;
+      if (voucherId) {
+        const { error: attributionError } = await supabase.from("vouchers").update({ generated_by: currentMember.id, handled_by: currentMember.id }).eq("id", voucherId);
+        if (attributionError) throw attributionError;
+      }
+    }
     if (type === "payment" && String(body.paymentMode) === "Cheque") {
       const voucherId = (result.data as any)?.id;
       if (!voucherId) throw new Error("Receipt was created but cheque details could not be linked");
@@ -395,6 +428,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const supabase=getSupabaseAdmin();if(!supabase)throw new Error("Supabase server configuration is missing");
+    const currentMember=await getCurrentMember(supabase);if(!currentMember)return NextResponse.json({error:"Active team access is required"},{status:401});
     const body=await request.json();
     const productId=String(body.productId||"");
     if(productId){
@@ -410,8 +444,19 @@ export async function PUT(request: Request) {
     const voucherId=String(body.voucherId||"");const type=String(body.type||"");
     if(!voucherId||!["sale","payment"].includes(type))return NextResponse.json({error:"Editable voucher is required"},{status:400});
     const partyId=String(body.partyId||"");if(!partyId)return NextResponse.json({error:"Party is required"},{status:400});
+    if(type==="payment"&&!body.moneyAccountId)return NextResponse.json({error:"Select where the payment was received"},{status:400});
     const result=type==="sale"?await supabase.rpc("update_sales_invoice",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_lines:body.lines,p_discount_percent:Number(body.discountPercent||0),p_tax_percent:Number(body.taxPercent||0),p_narration:String(body.particulars||"")}):await supabase.rpc("update_payment_receipt",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_amount:Number(body.amount),p_narration:String(body.particulars||""),p_payment_mode:String(body.paymentMode||"Cash"),p_cheque_no:body.chequeNo||null,p_cheque_bank:body.chequeBank||null,p_cheque_exchange_date:body.chequeExchangeDate||null});
     if(result.error)throw result.error;
+    if(type==="payment"){
+      const pending=String(body.paymentMode)==="Cheque";
+      const {error:attributionError}=await supabase.from("vouchers").update({handled_by:body.handledBy||currentMember.id,money_account_id:body.moneyAccountId}).eq("id",voucherId);if(attributionError)throw attributionError;
+      const movementValues={to_account_id:body.moneyAccountId,from_account_id:null,amount:Number(body.amount),movement_date:String(body.date),payment_mode:String(body.paymentMode||"Cash"),handled_by:body.handledBy||currentMember.id,title:String(body.particulars||"Payment received"),status:pending?"pending":"posted",posted_at:pending?null:new Date().toISOString()};
+      const {data:updatedMovements,error:movementError}=await supabase.from("money_movements").update(movementValues).eq("voucher_id",voucherId).select("id");if(movementError)throw movementError;
+      if(!updatedMovements?.length){
+        const {data:legacyVoucher,error:legacyError}=await supabase.from("vouchers").select("company_id,fiscal_year_id,party_id,voucher_no").eq("id",voucherId).single();if(legacyError)throw legacyError;
+        const {error:insertMovementError}=await supabase.from("money_movements").insert({...movementValues,company_id:legacyVoucher.company_id,fiscal_year_id:legacyVoucher.fiscal_year_id,voucher_id:voucherId,movement_type:"customer_receipt",party_id:legacyVoucher.party_id,generated_by:currentMember.id,reference:legacyVoucher.voucher_no,notes:String(body.particulars||"")});if(insertMovementError)throw insertMovementError;
+      }
+    }
     const {data:voucher}=await supabase.from("vouchers").select("fiscal_year_id,company_id").eq("id",voucherId).single();
     if(voucher)await supabase.rpc("refresh_future_opening_balances",{p_company_id:voucher.company_id,p_from_fiscal_year_id:voucher.fiscal_year_id});
     return NextResponse.json(await snapshot(voucher?.fiscal_year_id));
