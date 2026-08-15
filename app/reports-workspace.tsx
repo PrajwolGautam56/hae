@@ -6,7 +6,7 @@ import { formatBs } from "../lib/nepali-date";
 import { downloadCsv, printDocument } from "../lib/export-data";
 
 const money = (n: number) => `Rs. ${Math.abs(Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const typeLabel: Record<string,string> = { sale: "Sales Invoice", receipt: "Payment Receipt", payment: "Payment Given", purchase: "Purchase", expense: "Office Expense", journal: "Journal" };
+const typeLabel: Record<string,string> = { sale: "Sales Invoice", receipt: "Payment Receipt", cheque_adjustment: "Cheque Cancelled", payment: "Payment Given", purchase: "Purchase", expense: "Office Expense", journal: "Journal" };
 const reportLabel:Record<string,string>={daybook:"Day book",sales:"Sales register",purchases:"Purchase register",payments:"Payment receipt register",expenses:"Expense register",general_ledger:"General ledger",trial_balance:"Trial balance"};
 
 export default function ReportsWorkspace({ parties, fiscalYear, initialPartyId, onNotice }: { parties: any[]; fiscalYear: any; initialPartyId: string; onNotice: (x:string)=>void }) {

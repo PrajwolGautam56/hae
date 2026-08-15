@@ -51,7 +51,7 @@ async function snapshot(requestedFy?: string) {
       .limit(50),
     supabase
       .from("vouchers")
-      .select("voucher_type,voucher_date,total")
+      .select("voucher_type,voucher_date,total,payment_mode,cheque_status")
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date"),
     supabase
@@ -99,13 +99,15 @@ async function snapshot(requestedFy?: string) {
       };
     })
     .sort((a, b) => b.balance - a.balance);
-  const transactions = (vouchers || []).map((v) => ({
+  const transactions = (vouchers || []).map((v) => {
+    const cancelledCheque=v.voucher_type==="receipt"&&v.payment_mode==="Cheque"&&v.cheque_status==="cancelled";
+    return ({
     id: v.id,
     type: v.voucher_type,
     ref: v.voucher_no,
     date: v.voucher_date,
-    particulars: v.narration,
-    debit: v.voucher_type === "sale" ? Number(v.total) : 0,
+    particulars: cancelledCheque?`${v.narration||"Cheque receipt"} · Cancelled / adjusted`:v.narration,
+    debit: v.voucher_type === "sale" || cancelledCheque ? Number(v.total) : 0,
     credit: v.voucher_type !== "sale" ? Number(v.total) : 0,
     payment_mode: v.payment_mode,
     cheque_no: v.cheque_no,
@@ -122,7 +124,8 @@ async function snapshot(requestedFy?: string) {
     generated_by_name: (v.generator as any)?.name || "Office",
     handled_by_name: (v.handler as any)?.name || null,
     money_account_name: (v.money_account as any)?.name || null,
-  }));
+    });
+  });
   const totals = {
     sales: 0,
     received: 0,
@@ -131,7 +134,7 @@ async function snapshot(requestedFy?: string) {
   };
   for (const v of fiscalVouchers || []) {
     if (v.voucher_type === "sale") totals.sales += Number(v.total);
-    if (v.voucher_type === "receipt") totals.received += Number(v.total);
+    if (v.voucher_type === "receipt" && !(v.payment_mode === "Cheque" && v.cheque_status === "cancelled")) totals.received += Number(v.total);
     if (v.voucher_type === "expense") totals.expenses += Number(v.total);
   }
   const chartEnd = today < fiscalYear.start_ad
@@ -153,7 +156,7 @@ async function snapshot(requestedFy?: string) {
     const bucket = performance.get(`${parts.year}-${parts.month}`);
     if (!bucket) continue;
     if (voucher.voucher_type === "sale") bucket.sales += Number(voucher.total);
-    if (voucher.voucher_type === "receipt") bucket.collections += Number(voucher.total);
+    if (voucher.voucher_type === "receipt" && !(voucher.payment_mode === "Cheque" && voucher.cheque_status === "cancelled")) bucket.collections += Number(voucher.total);
   }
   return {
     source: "supabase",
@@ -453,7 +456,7 @@ export async function PUT(request: Request) {
       if(pending){voucherUpdate.cheque_status="pending";voucherUpdate.cheque_cleared_at=null}
       const {error:attributionError}=await supabase.from("vouchers").update(voucherUpdate).eq("id",voucherId);if(attributionError)throw attributionError;
       if(pending){
-        const {error:pendingMovementError}=await supabase.from("money_movements").update({amount:Number(body.amount),movement_date:String(body.date),payment_mode:"Cheque",handled_by:body.handledBy||currentMember.id,title:String(body.particulars||"Cheque received"),status:"pending",posted_at:null}).eq("voucher_id",voucherId);if(pendingMovementError)throw pendingMovementError;
+        const {error:pendingError}=await supabase.rpc("set_received_cheque_status",{p_voucher_id:voucherId,p_status:"pending",p_destination_account_id:null,p_approved_by:currentMember.id});if(pendingError)throw pendingError;
       }else{
         const movementValues={to_account_id:body.moneyAccountId,from_account_id:null,amount:Number(body.amount),movement_date:String(body.date),payment_mode:String(body.paymentMode||"Cash"),handled_by:body.handledBy||currentMember.id,title:String(body.particulars||"Payment received"),status:"posted",posted_at:new Date().toISOString()};
         const {data:updatedMovements,error:movementError}=await supabase.from("money_movements").update(movementValues).eq("voucher_id",voucherId).select("id");if(movementError)throw movementError;

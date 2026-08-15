@@ -53,8 +53,10 @@ export async function GET(request: Request) {
       return NextResponse.json({company,fiscalYear:fy,from:dateFrom,to:dateTo,reportType,accounts,opening:accountId?(opening.get(accountId)||0):null,closing:accountId?running:null,totals,rows});
     }
 
-    let voucherQuery = db.from("vouchers").select("id,voucher_no,voucher_type,voucher_date,narration,payment_mode,subtotal,discount_amount,tax_amount,total,party_id,parties(name),ledger_entries(debit,credit,account_name)").eq("company_id", company.id).eq("fiscal_year_id", fy.id).gte("voucher_date", dateFrom).lte("voucher_date", dateTo).order("voucher_date").order("created_at");
-    if (partyId) voucherQuery = voucherQuery.eq("party_id", partyId);
+    const voucherFields="id,voucher_no,voucher_type,voucher_date,narration,payment_mode,cheque_status,subtotal,discount_amount,tax_amount,total,party_id,parties(name)";
+    let voucherQuery = partyId
+      ? db.from("vouchers").select(`${voucherFields},ledger_entries!inner(id,entry_date,debit,credit,account_name,created_at)`).eq("company_id",company.id).eq("fiscal_year_id",fy.id).eq("party_id",partyId).gte("ledger_entries.entry_date",dateFrom).lte("ledger_entries.entry_date",dateTo).order("voucher_date").order("created_at")
+      : db.from("vouchers").select(`${voucherFields},ledger_entries(id,entry_date,debit,credit,account_name,created_at)`).eq("company_id",company.id).eq("fiscal_year_id",fy.id).gte("voucher_date",dateFrom).lte("voucher_date",dateTo).order("voucher_date").order("created_at");
     const voucherReportTypes:Record<string,string>={sales:"sale",purchases:"purchase",payments:"receipt",expenses:"expense"};
     if (voucherReportTypes[reportType]) voucherQuery = voucherQuery.eq("voucher_type", voucherReportTypes[reportType]);
     const { data: vouchers, error: voucherError } = await voucherQuery;
@@ -74,12 +76,18 @@ export async function GET(request: Request) {
     }
 
     let running = opening;
-    const rows = (vouchers || []).map((v: any) => {
-      const debit = (v.ledger_entries || []).reduce((s: number, x: any) => s + Number(x.debit), 0);
-      const credit = (v.ledger_entries || []).reduce((s: number, x: any) => s + Number(x.credit), 0);
-      if (partyId) running += debit - credit;
-      return { id: v.id, ref: v.voucher_no, type: v.voucher_type, date: v.voucher_date, party: v.parties?.name || "Cash / Office", particulars: v.narration || "—", paymentMode: v.payment_mode, subtotal: Number(v.subtotal), discount: Number(v.discount_amount), tax: Number(v.tax_amount), amount: Number(v.total), debit, credit, balance: partyId ? running : null };
-    });
+    const partyRows = partyId ? (vouchers || []).flatMap((v: any) => (v.ledger_entries || []).map((entry:any,index:number) => {
+      const adjustment=entry.account_name==="Cancelled Cheque Receipt Adjustment";
+      return { id:entry.id,voucherId:v.id,ref:v.voucher_no,type:adjustment?"cheque_adjustment":v.voucher_type,date:entry.entry_date||v.voucher_date,createdAt:entry.created_at,party:v.parties?.name||"Cash / Office",particulars:adjustment?"Cancelled cheque · received payment adjusted":v.narration||"—",paymentMode:v.payment_mode,subtotal:Number(v.subtotal),discount:Number(v.discount_amount),tax:Number(v.tax_amount),amount:index===0?Number(v.total):0,debit:Number(entry.debit),credit:Number(entry.credit) };
+    })).sort((a:any,b:any)=>String(a.date).localeCompare(String(b.date))||String(a.createdAt).localeCompare(String(b.createdAt))) : [];
+    const rows = partyId
+      ? partyRows.map((row:any)=>{running+=row.debit-row.credit;return{...row,balance:running}})
+      : (vouchers || []).map((v: any) => {
+          const debit=(v.ledger_entries||[]).reduce((sum:number,entry:any)=>sum+Number(entry.debit),0);
+          const credit=(v.ledger_entries||[]).reduce((sum:number,entry:any)=>sum+Number(entry.credit),0);
+          const cancelledCheque=v.voucher_type==="receipt"&&v.payment_mode==="Cheque"&&v.cheque_status==="cancelled";
+          return { id:v.id, ref:v.voucher_no, type:cancelledCheque?"cheque_adjustment":v.voucher_type, date:v.voucher_date, party:v.parties?.name||"Cash / Office", particulars:cancelledCheque?"Cancelled cheque · received payment adjusted":v.narration||"—", paymentMode:v.payment_mode, subtotal:Number(v.subtotal), discount:Number(v.discount_amount), tax:Number(v.tax_amount), amount:cancelledCheque?0:Number(v.total), debit, credit, balance:null };
+        });
     const totals = rows.reduce((s, x) => ({ debit: s.debit + x.debit, credit: s.credit + x.credit, sales: s.sales + (x.type === "sale" ? x.amount : 0), purchases: s.purchases + (x.type === "purchase" ? x.amount : 0), receipts: s.receipts + (x.type === "receipt" ? x.amount : 0), expenses: s.expenses + (x.type === "expense" ? x.amount : 0) }), { debit: 0, credit: 0, sales: 0, purchases: 0, receipts: 0, expenses: 0 });
     return NextResponse.json({ company, fiscalYear: fy, party, from: dateFrom, to: dateTo, reportType, opening, closing: partyId ? running : null, totals, rows });
   } catch (error: any) {
