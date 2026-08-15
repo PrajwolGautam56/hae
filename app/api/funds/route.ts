@@ -36,7 +36,8 @@ async function snapshot(requestedFy?: string) {
   const visibleAccounts = ["admin", "manager", "accountant"].includes(member.role)
     ? accounts
     : accounts.filter((account) => account.account_type !== "employee_wallet" || account.team_member_id === member.id);
-  return { company, fiscalYear, currentMember: member, accounts: visibleAccounts, movements, members: membersResult.data || [], parties: partiesResult.data || [] };
+  const transferDestinations = accounts.map(({ id, account_type, name, team_member_id }) => ({ id, account_type, name, team_member_id }));
+  return { company, fiscalYear, currentMember: member, accounts: visibleAccounts, transferDestinations, movements, members: membersResult.data || [], parties: partiesResult.data || [] };
 }
 
 export async function GET(request: Request) {
@@ -62,10 +63,13 @@ export async function POST(request: Request) {
     } else if (action === "transfer") {
       const sourceId = String(body.fromAccountId || "");
       const destinationId = String(body.toAccountId || "");
+      const amount = Number(body.amount);
+      if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: "Enter a valid transfer amount" }, { status: 400 });
+      if (!sourceId || !destinationId || sourceId === destinationId) return NextResponse.json({ error: "Select different source and destination accounts" }, { status: 400 });
       const { data: source, error: sourceError } = await db.from("money_accounts").select("id,team_member_id").eq("id", sourceId).eq("company_id", company.id).single();
       if (sourceError) throw sourceError;
       if (!privileged && source.team_member_id !== member.id) return NextResponse.json({ error: "You can transfer only from your own wallet" }, { status: 403 });
-      const { error } = await db.rpc("record_money_transfer", { p_company_id: company.id, p_fiscal_year_id: fiscalYear.id, p_from_account_id: sourceId, p_to_account_id: destinationId, p_amount: Number(body.amount), p_date: String(body.date || businessDate()), p_title: String(body.title || "Cash deposited"), p_notes: String(body.notes || ""), p_generated_by: member.id, p_approved_by: privileged ? member.id : null });
+      const { error } = await db.rpc("record_money_transfer", { p_company_id: company.id, p_fiscal_year_id: fiscalYear.id, p_from_account_id: sourceId, p_to_account_id: destinationId, p_amount: amount, p_date: String(body.date || businessDate()), p_title: String(body.title || "Cash handover / transfer"), p_notes: String(body.notes || ""), p_generated_by: member.id, p_approved_by: privileged ? member.id : null });
       if (error) throw error;
     } else if (action === "outgoing_payment") {
       const sourceId = String(body.fromAccountId || "");
