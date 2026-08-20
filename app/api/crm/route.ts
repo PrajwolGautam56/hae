@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { sendTeamEmail } from "../../../lib/resend-email";
+import { NEPAL_PROVINCES, provinceForDistrict } from "../../../lib/nepal-address";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,26 @@ async function getCompany(supabase: NonNullable<ReturnType<typeof getSupabaseAdm
   const { data, error } = await supabase.from("companies").select("id,name").order("created_at").limit(1).single();
   if (error) throw error;
   return data;
+}
+
+function cleanOptional(value: unknown) {
+  const result = String(value || "").trim();
+  return result || null;
+}
+
+function leadLocation(body: Record<string, unknown>) {
+  let province = cleanOptional(body.province);
+  const district = cleanOptional(body.district);
+  const city = cleanOptional(body.city);
+  const address = cleanOptional(body.address);
+  if (province && !NEPAL_PROVINCES.includes(province as (typeof NEPAL_PROVINCES)[number])) throw new Error("Select a valid Nepal province");
+  if (district) {
+    const matchingProvince = provinceForDistrict(district);
+    if (!matchingProvince) throw new Error("Select a valid Nepal district");
+    if (province && province !== matchingProvince) throw new Error(`${district} is not inside ${province}`);
+    province ||= matchingProvince;
+  }
+  return { province, district, city, address };
 }
 
 async function snapshot() {
@@ -58,7 +79,7 @@ export async function POST(request: Request) {
 
     if (action === "create_lead") {
       if (!String(body.name || "").trim() || !String(body.phone || "").trim()) return NextResponse.json({ error: "Name and phone are required" }, { status: 400 });
-      ({ error } = await supabase.from("leads").insert({ company_id: company.id, name: String(body.name).trim(), phone: String(body.phone).trim(), source: body.source || "social_media", interest: body.interest || null, assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null }));
+      ({ error } = await supabase.from("leads").insert({ company_id: company.id, name: String(body.name).trim(), phone: String(body.phone).trim(), source: body.source || "social_media", interest: cleanOptional(body.interest), assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, ...leadLocation(body) }));
     } else if (action === "create_member") {
       if (!String(body.name || "").trim()) return NextResponse.json({ error: "Team member name is required" }, { status: 400 });
       ({ error } = await supabase.from("team_members").insert({ company_id: company.id, name: String(body.name).trim(), phone: body.phone || null, email: body.email || null, role: body.role || "staff" }));
@@ -76,6 +97,9 @@ export async function POST(request: Request) {
       if (!error && body.nextActionAt) await notifyMember(supabase, body.memberId || null, "Follow-up scheduled", body.taskTitle || "A client follow-up was scheduled", `The next action is due ${new Date(body.nextActionAt).toLocaleString("en-GB")}.`);
     } else if (action === "update_lead") {
       ({ error } = await supabase.from("leads").update({ status: body.status, assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, updated_at: new Date().toISOString() }).eq("id", body.leadId).eq("company_id", company.id));
+    } else if (action === "update_lead_profile") {
+      if (!String(body.name || "").trim() || !String(body.phone || "").trim()) return NextResponse.json({ error: "Name and phone are required" }, { status: 400 });
+      ({ error } = await supabase.from("leads").update({ name: String(body.name).trim(), phone: String(body.phone).trim(), source: body.source || "social_media", interest: cleanOptional(body.interest), assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, ...leadLocation(body), updated_at: new Date().toISOString() }).eq("id", body.leadId).eq("company_id", company.id));
     } else if (action === "complete_task") {
       ({ error } = await supabase.from("work_tasks").update({ status: "done", completed_at: new Date().toISOString() }).eq("id", body.taskId).eq("company_id", company.id));
     } else if (action === "convert_lead") {
