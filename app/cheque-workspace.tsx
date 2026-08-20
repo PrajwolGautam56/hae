@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { formatBs } from "../lib/nepali-date";
+import { getCachedJson, peekClientCache, setClientCache } from "../lib/client-data-cache";
 
 const money = (value: number) =>
   `Rs. ${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function ChequeWorkspace({ onNotice }: { onNotice: (message: string) => void }) {
-  const [data, setData] = useState<any>({ rows: [], accounts: [], counts: {} });
+  const [data, setData] = useState<any>(() => peekClientCache("cheques:snapshot") || { rows: [], accounts: [], counts: {} });
   const [filter, setFilter] = useState("pending");
   const [busy, setBusy] = useState("");
   const [clearing, setClearing] = useState<any>(null);
@@ -15,9 +16,7 @@ export default function ChequeWorkspace({ onNotice }: { onNotice: (message: stri
 
   async function load() {
     try {
-      const response = await fetch("/api/cheques", { cache: "no-store" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error);
+      const body = await getCachedJson<any>("cheques:snapshot", "/api/cheques", { maxAgeMs: 30_000 });
       setData(body);
     } catch (error) {
       onNotice(error instanceof Error ? error.message : "Cheque register could not load");
@@ -36,6 +35,7 @@ export default function ChequeWorkspace({ onNotice }: { onNotice: (message: stri
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error);
+      setClientCache("cheques:snapshot", body);
       setData(body);
       setClearing(null);
       onNotice(status === "cleared" ? "Cheque cleared and amount posted to the selected account" : "Cheque status updated");

@@ -8,12 +8,16 @@ import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
 import ChequeWorkspace from "./cheque-workspace";
 import FundsWorkspace from "./funds-workspace";
+import OrdersWorkspace from "./orders-workspace";
+import ClientAccessPanel from "./client-access-panel";
+import { getCachedJson, invalidateClientCache } from "../lib/client-data-cache";
 
 const nav = [
   "Overview",
   "Sales",
   "Purchases",
   "Payments",
+  "Orders",
   "Cheques",
   "Parties",
   "Inventory",
@@ -27,7 +31,7 @@ const nav = [
   "Team",
 ];
 
-const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10","Cash & Bank":"M3 7h18v13H3zM7 7V5h10v2M7 12h4m6 0h.01M7 16h10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
+const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Orders:"M6 6h15l-2 8H8L6 3H3m6 15a1 1 0 1 0 0 2 1 1 0 0 0 0-2m8 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10","Cash & Bank":"M3 7h18v13H3zM7 7V5h10v2M7 12h4m6 0h.01M7 16h10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
 function NavIcon({name}:{name:string}){return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={iconPaths[name]||iconPaths.Overview}/></svg>}
 const transactionIcon = (type: string) => type === "Sales Invoice" ? "Sales" : type === "Payment Received" ? "Payments" : type === "Purchase" ? "Purchases" : "Expenses";
 
@@ -157,9 +161,8 @@ export default function Home() {
   }, []);
   async function refreshChequeCounts() {
     try {
-      const response = await fetch("/api/cheques", { cache: "no-store" });
-      const data = await response.json();
-      if (response.ok) { setChequeCounts(data.counts); setChequeBanks(data.banks || []); }
+      const data = await getCachedJson<any>("cheques:snapshot", "/api/cheques", { maxAgeMs: 30_000 });
+      setChequeCounts(data.counts); setChequeBanks(data.banks || []);
     } catch {}
   }
   useEffect(() => { refreshChequeCounts(); }, []);
@@ -204,7 +207,14 @@ export default function Home() {
     setCompany(data.company || { name: "Hamro Afno Enterprises" });
     try { sessionStorage.setItem(`hae-snapshot-${data.fiscalYear?.id || "current"}`, JSON.stringify(data)); sessionStorage.setItem("hae-snapshot-current", JSON.stringify(data)); } catch {}
   }
-  function clearReportCache(){try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith("hae-report-"))sessionStorage.removeItem(key)}}catch{}}
+  function clearReportCache(){invalidateClientCache("reports:");try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith("hae-report-"))sessionStorage.removeItem(key)}}catch{}}
+  function warmModule(item:string){
+    if(["Leads","Tasks","Activity","Team"].includes(item))void getCachedJson("crm:snapshot","/api/crm",{maxAgeMs:30_000}).catch(()=>{});
+    if(item==="Orders")void getCachedJson("orders:snapshot","/api/orders",{maxAgeMs:20_000}).catch(()=>{});
+    if(item==="Cheques")void getCachedJson("cheques:snapshot","/api/cheques",{maxAgeMs:30_000}).catch(()=>{});
+    if(item==="Cash & Bank"&&fiscalYear?.id)void getCachedJson(`funds:${fiscalYear.id}`,`/api/funds?fy=${fiscalYear.id}`,{maxAgeMs:30_000}).catch(()=>{});
+    if(item==="Reports"&&fiscalYear?.id){const reportDate=localBusinessDate();const q=new URLSearchParams({fiscalYearId:fiscalYear.id,type:"daybook",from:reportDate,to:reportDate});void getCachedJson(`reports:${q}`,`/api/reports?${q}`,{maxAgeMs:45_000}).catch(()=>{})}
+  }
   useEffect(() => {
     try { const cached=sessionStorage.getItem("hae-snapshot-current");if(cached)applySnapshot(JSON.parse(cached)); } catch {}
     const controller=new AbortController();
@@ -328,7 +338,12 @@ export default function Home() {
       return;
     }
     clearReportCache();
+    invalidateClientCache("cheques:");
+    invalidateClientCache("funds:");
+    invalidateClientCache("crm:");
+    invalidateClientCache("orders:");
     applySnapshot(data);
+    void refreshChequeCounts();
     setModal(null);
     setEditingVoucherId("");
     setEditingProductId("");
@@ -522,10 +537,12 @@ export default function Home() {
         <nav>
           <p>WORKSPACE</p>
           {nav.map((item, i) => (
-            <button
-              key={item}
-              className={active === item ? "active" : ""}
-              onClick={() => {
+              <button
+                key={item}
+                className={active === item ? "active" : ""}
+                onPointerEnter={() => warmModule(item)}
+                onPointerDown={() => warmModule(item)}
+                onClick={() => {
                 setActive(item);
                 setSidebarOpen(false);
               }}
@@ -955,6 +972,8 @@ export default function Home() {
             </section>
           ) : active === "Cash & Bank" ? (
             <FundsWorkspace fiscalYear={fiscalYear} onNotice={setNotice} />
+          ) : active === "Orders" ? (
+            <OrdersWorkspace onNotice={setNotice} />
           ) : active === "Cheques" ? (
             <ChequeWorkspace onNotice={setNotice} />
           ) : active === "Reports" ? (
@@ -1000,12 +1019,10 @@ export default function Home() {
                   <div className="hero-actions"><button className="primary soft" onClick={() => {setProductType("finished_good");openModuleModal("product")}}>＋ Add sellable item</button><button className="primary" onClick={openProduction}>⚙ Produce finished goods</button></div>
                 )}
                 {active === "Parties" && (
-                  <button
-                    className="primary"
-                    onClick={() => openModuleModal("party")}
-                  >
-                    ＋ Add party
-                  </button>
+                  <div className="hero-actions">
+                    <button className="primary soft" onClick={() => document.getElementById("client-access")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Client portal access</button>
+                    <button className="primary" onClick={() => openModuleModal("party")}>＋ Add party</button>
+                  </div>
                 )}
                 {active === "Payments" && (
                   <button
@@ -1173,6 +1190,7 @@ export default function Home() {
                   )}
                 </div>
               </article>
+              {active === "Parties" && <ClientAccessPanel onNotice={setNotice} />}
             </section>
           )}
         </div>
@@ -1708,7 +1726,7 @@ export default function Home() {
       )}
       <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
         {["Overview","Sales","Payments","Parties"].map((item) => (
-          <button key={item} className={active===item?"active":""} onClick={()=>setActive(item)}><i><NavIcon name={item}/></i><span>{item}</span></button>
+          <button key={item} className={active===item?"active":""} onPointerDown={()=>warmModule(item)} onClick={()=>setActive(item)}><i><NavIcon name={item}/></i><span>{item}</span></button>
         ))}
         <button onClick={()=>setSidebarOpen(true)}><i>☰</i><span>More</span></button>
       </nav>

@@ -4,6 +4,7 @@ import "./globals.css";
 import "./modal-fix.css";
 import "./modern-ui.css";
 import "./aim-ui.css";
+import "./portal-ui.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +19,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Hamro Afno Enterprises — Accounts & CRM",
   description: "Sales, purchases, inventory, payments and party ledgers in one simple accounting workspace.",
+  robots: { index: false, follow: false, nocache: true },
   icons: {
     icon: "/hamro-afno-logo.jpeg",
     shortcut: "/hamro-afno-logo.jpeg",

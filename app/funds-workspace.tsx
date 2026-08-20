@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import { formatBs } from "../lib/nepali-date";
+import { getCachedJson, peekClientCache, setClientCache } from "../lib/client-data-cache";
 
 const money=(value:number)=>`Rs. ${Number(value||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 const today=()=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kathmandu",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -9,12 +10,13 @@ const accountLabel:Record<string,string>={bank:"Bank account",office_cash:"Offic
 const movementLabel:Record<string,string>={customer_receipt:"Customer receipt",internal_transfer:"Cash transfer",outgoing_payment:"Payment given",expense:"Expense",office_deposit:"Office deposit",bank_deposit:"Bank deposit",opening_adjustment:"Opening balance"};
 
 export default function FundsWorkspace({fiscalYear,onNotice}:{fiscalYear:any;onNotice:(message:string)=>void}){
-  const [data,setData]=useState<any>({accounts:[],transferDestinations:[],movements:[],members:[],parties:[]});
+  const cacheKey=`funds:${fiscalYear?.id||"current"}`;
+  const [data,setData]=useState<any>(()=>peekClientCache(cacheKey)||{accounts:[],transferDestinations:[],movements:[],members:[],parties:[]});
   const [dialog,setDialog]=useState<"account"|"transfer"|"outgoing"|null>(null);
   const [selectedAccountId,setSelectedAccountId]=useState("");
   const [busy,setBusy]=useState(false);
   const [form,setForm]=useState<any>({accountType:"bank",date:today(),paymentMode:"Cash",asExpense:false});
-  const load=async()=>{if(!fiscalYear?.id)return;const response=await fetch(`/api/funds?fy=${fiscalYear.id}`,{cache:"no-store"});const body=await response.json();if(!response.ok){onNotice(body.error||"Funds could not be loaded");return}setData(body)};
+  const load=async()=>{if(!fiscalYear?.id)return;try{const body=await getCachedJson<any>(`funds:${fiscalYear.id}`,`/api/funds?fy=${fiscalYear.id}`,{maxAgeMs:30_000});setData(body)}catch(error){onNotice(error instanceof Error?error.message:"Funds could not be loaded")}};
   useEffect(()=>{load()},[fiscalYear?.id]);
   const accounts=data.accounts||[];
   const transferDestinations=data.transferDestinations||accounts;
@@ -30,7 +32,7 @@ export default function FundsWorkspace({fiscalYear,onNotice}:{fiscalYear:any;onN
     setForm({accountType:"bank",date:today(),paymentMode:"Cash",asExpense:false,fromAccountId:sourceId,toAccountId:destinationId});setDialog(kind);
   }
   async function submit(){
-    setBusy(true);const response=await fetch("/api/funds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,action:dialog==="account"?"add_account":dialog==="transfer"?"transfer":"outgoing_payment",fiscalYearId:fiscalYear.id})});const body=await response.json();setBusy(false);if(!response.ok){onNotice(body.error||"Could not save");return}setData(body);setDialog(null);onNotice(dialog==="account"?"Financial account added":dialog==="transfer"?"Cash transfer recorded":"Outgoing payment recorded");
+    setBusy(true);const response=await fetch("/api/funds",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,action:dialog==="account"?"add_account":dialog==="transfer"?"transfer":"outgoing_payment",fiscalYearId:fiscalYear.id})});const body=await response.json();setBusy(false);if(!response.ok){onNotice(body.error||"Could not save");return}setClientCache(`funds:${fiscalYear.id}`,body);setData(body);setDialog(null);onNotice(dialog==="account"?"Financial account added":dialog==="transfer"?"Cash transfer recorded":"Outgoing payment recorded");
   }
   return <section className="funds-workspace">
     <div className="module-hero funds-hero"><div><span>CASH CONTROL</span><h2>Cash & Bank</h2><p>Track company banks, office cash and every employee wallet from collection to deposit.</p></div><div className="hero-actions"><button className="primary soft" onClick={()=>open("account")}>＋ Add account</button><button className="primary soft" onClick={()=>open("transfer")}>⇄ Transfer / deposit</button><button className="primary" onClick={()=>open("outgoing")}>− Payment given</button></div></div>
