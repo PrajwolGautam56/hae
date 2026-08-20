@@ -11,11 +11,12 @@ export async function POST(request: Request) {
     if (!url || !key) throw new Error("Authentication configuration is missing");
     const authClient = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data, error } = await authClient.auth.signInWithPassword({ email: String(email).trim().toLowerCase(), password: String(password) });
-    if (error || !data.session) return NextResponse.json({ error: "Invalid customer login" }, { status: 401 });
+    if (error || !data.session) return NextResponse.json({ error: "Email or password is incorrect. Use Forgot password or ask the office to set a new password." }, { status: 401 });
     const admin = getSupabaseAdmin();
     if (!admin) throw new Error("Server authentication configuration is missing");
     const { data: party } = await admin.from("parties").select("id,name,portal_active").eq("auth_user_id", data.user.id).maybeSingle();
-    if (!party?.portal_active) return NextResponse.json({ error: "Customer portal access is not active" }, { status: 403 });
+    if (!party) return NextResponse.json({ error: "This email is not linked to a customer account" }, { status: 403 });
+    if (!party.portal_active) return NextResponse.json({ error: "Customer portal access is disabled. Please contact the office." }, { status: 403 });
     const response = NextResponse.json({ user: { name: party.name, email: data.user.email } });
     const secure = process.env.NODE_ENV === "production";
     response.cookies.set("hae_party_access_token", data.session.access_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: data.session.expires_in });

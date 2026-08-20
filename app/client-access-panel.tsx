@@ -1,4 +1,85 @@
 "use client";
-import { useEffect,useState } from "react";
 
-export default function ClientAccessPanel({onNotice}:{onNotice:(message:string)=>void}){const [parties,setParties]=useState<any[]>([]);const [allowed,setAllowed]=useState<boolean|null>(null);const [busy,setBusy]=useState(false);const [form,setForm]=useState({partyId:"",email:"",password:"",sendEmail:true});async function request(body?:any){const response=await fetch("/api/client-access",{method:body?"POST":"GET",headers:body?{"Content-Type":"application/json"}:{},body:body?JSON.stringify(body):undefined});const data=await response.json();if(!response.ok)throw new Error(data.error);return data}async function load(){try{const data=await request();setParties(data.parties);setAllowed(true)}catch{setAllowed(false)}}useEffect(()=>{void load()},[]);async function act(body:any,message:string){setBusy(true);try{await request(body);await load();onNotice(message)}catch(error){onNotice(error instanceof Error?error.message:"Customer access could not update")}finally{setBusy(false)}}async function create(){await act({action:"create",...form},form.sendEmail?"Customer portal invite sent":"Customer portal account created");setForm({partyId:"",email:"",password:"",sendEmail:true})}if(allowed===null)return <article id="client-access" className="card client-access-loading">Checking client portal access…</article>;if(!allowed)return null;const available=parties.filter(party=>!party.auth_user_id);return <article id="client-access" className="card client-access-panel"><div className="card-title"><div><h3>Customer portal access</h3><p>Create secure party logins for ledger viewing and online orders.</p></div></div><div className="client-access-grid"><section><h4>Create customer login</h4><label>Party / client<select value={form.partyId} onChange={event=>setForm({...form,partyId:event.target.value})}><option value="">Select party</option>{available.map(party=><option key={party.id} value={party.id}>{party.name}</option>)}</select></label><label>Customer email<input type="email" value={form.email} onChange={event=>setForm({...form,email:event.target.value})}/></label><label>Initial password (optional)<input type="password" minLength={8} value={form.password} onChange={event=>setForm({...form,password:event.target.value})} placeholder="Customer can set it from email"/></label><label className="client-access-check"><input type="checkbox" checked={form.sendEmail} onChange={event=>setForm({...form,sendEmail:event.target.checked})}/><span>Send secure password setup email</span></label><button className="primary" disabled={busy||!form.partyId||!form.email||(!!form.password&&form.password.length<8)} onClick={create}>Create client access</button></section><section><h4>Enabled customers</h4><div className="client-access-list">{parties.filter(party=>party.auth_user_id).map(party=><div key={party.id}><span><strong>{party.name}</strong><small>{party.portal_email}</small></span><em className={party.portal_active?"active":"inactive"}>{party.portal_active?"Active":"Disabled"}</em><div><button disabled={busy} onClick={()=>act({action:"reset",partyId:party.id},"Password reset email sent")}>Reset password</button><button disabled={busy} onClick={()=>act({action:"status",partyId:party.id,active:!party.portal_active},party.portal_active?"Customer portal disabled":"Customer portal enabled")}>{party.portal_active?"Disable":"Enable"}</button></div></div>)}{!parties.some(party=>party.auth_user_id)&&<p>No customer login created yet.</p>}</div></section></div></article>}
+import { useEffect, useState } from "react";
+import { formatBs } from "../lib/nepali-date";
+
+type PartyAccess = {
+  id: string;
+  name: string;
+  portal_email?: string | null;
+  portal_active: boolean;
+  auth_user_id?: string | null;
+  auth_exists: boolean;
+  email_confirmed: boolean;
+  last_sign_in_at?: string | null;
+};
+type AccessResponse = { parties?: PartyAccess[]; error?: string; warning?: string };
+
+export default function ClientAccessPanel({ onNotice }: { onNotice: (message: string) => void }) {
+  const [parties, setParties] = useState<PartyAccess[]>([]);
+  const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState("");
+  const [passwords, setPasswords] = useState<Record<string, string>>({});
+  const [form, setForm] = useState({ partyId: "", email: "", password: "", sendEmail: true });
+
+  async function request(body?: Record<string, unknown>) {
+    const response = await fetch("/api/client-access", { method: body ? "POST" : "GET", headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    const data = await response.json() as AccessResponse;
+    if (!response.ok) throw new Error(data.error || "Customer access request failed");
+    return data;
+  }
+  async function load() {
+    try { const data = await request(); setParties(data.parties || []); setAllowed(true); }
+    catch { setAllowed(false); }
+  }
+  useEffect(() => { void load(); }, []);
+
+  async function act(key: string, body: Record<string, unknown>, message: string) {
+    setBusy(key);
+    try {
+      const data = await request(body);
+      if (data.parties) setParties(data.parties);
+      onNotice(data.warning || message);
+      return true;
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : "Customer access could not update");
+      return false;
+    } finally { setBusy(""); }
+  }
+  async function create() {
+    const saved = await act("create", { action: "create", ...form }, "Customer login created. The initial password works immediately.");
+    if (saved) setForm({ partyId: "", email: "", password: "", sendEmail: true });
+  }
+  async function setPassword(party: PartyAccess) {
+    const password = passwords[party.id] || "";
+    const saved = await act(`password:${party.id}`, { action: "set_password", partyId: party.id, password }, `New password saved for ${party.name}`);
+    if (saved) setPasswords((current) => ({ ...current, [party.id]: "" }));
+  }
+
+  if (allowed === null) return <article id="client-access" className="card client-access-loading">Checking client portal access…</article>;
+  if (!allowed) return null;
+  const available = parties.filter((party) => !party.auth_user_id);
+  const enabled = parties.filter((party) => party.auth_user_id);
+  return <article id="client-access" className="card client-access-panel">
+    <div className="card-title"><div><h3>Customer portal access</h3><p>Create a working login, set passwords directly and review sign-in health.</p></div></div>
+    <div className="client-access-grid">
+      <section>
+        <h4>Create customer login</h4>
+        <p className="client-access-help">The initial password works immediately. The optional email link lets the customer replace it securely.</p>
+        <label>Party / client<select value={form.partyId} onChange={(event) => setForm({ ...form, partyId: event.target.value })}><option value="">Select party</option>{available.map((party) => <option key={party.id} value={party.id}>{party.name}</option>)}</select></label>
+        <label>Customer email<input type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+        <label>Initial password<input type="password" minLength={8} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Minimum 8 characters" /></label>
+        <label className="client-access-check"><input type="checkbox" checked={form.sendEmail} onChange={(event) => setForm({ ...form, sendEmail: event.target.checked })} /><span>Also send a secure password setup email</span></label>
+        <button className="primary" disabled={Boolean(busy) || !form.partyId || !form.email || form.password.length < 8} onClick={create}>{busy === "create" ? "Creating login…" : "Create & activate login"}</button>
+      </section>
+      <section>
+        <h4>Customer login health</h4>
+        <div className="client-access-list">{enabled.map((party) => <div className="client-access-account" key={party.id}>
+          <span><strong>{party.name}</strong><small>{party.portal_email}</small><small className={party.last_sign_in_at ? "signed-in" : "never-signed-in"}>{!party.auth_exists ? "Authentication link is broken" : party.last_sign_in_at ? `Last login ${formatBs(party.last_sign_in_at, true)}` : "Never logged in"}</small></span>
+          <em className={party.portal_active && party.auth_exists ? "active" : "inactive"}>{party.portal_active && party.auth_exists ? "Active" : "Attention"}</em>
+          <div className="client-account-actions"><div className="client-password-control"><input type="password" minLength={8} value={passwords[party.id] || ""} onChange={(event) => setPasswords((current) => ({ ...current, [party.id]: event.target.value }))} placeholder="Set a new password" /><button disabled={Boolean(busy) || (passwords[party.id] || "").length < 8} onClick={() => setPassword(party)}>{busy === `password:${party.id}` ? "Saving…" : "Set password"}</button></div><button disabled={Boolean(busy)} onClick={() => act(`reset:${party.id}`, { action: "reset", partyId: party.id }, "Password reset email sent")}>Send reset email</button><button disabled={Boolean(busy)} onClick={() => act(`status:${party.id}`, { action: "status", partyId: party.id, active: !party.portal_active }, party.portal_active ? "Customer portal disabled" : "Customer portal enabled")}>{party.portal_active ? "Disable" : "Enable"}</button></div>
+        </div>)}{!enabled.length && <p>No customer login created yet.</p>}</div>
+      </section>
+    </div>
+  </article>;
+}

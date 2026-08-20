@@ -6,6 +6,7 @@ import "./modern-ui.css";
 import "./aim-ui.css";
 import "./portal-ui.css";
 import "./lead-location.css";
+import "./client-auth.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
