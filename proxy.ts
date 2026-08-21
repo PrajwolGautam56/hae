@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const STAFF_PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password", "/api/auth/login", "/api/auth/logout", "/api/auth/forgot-password"];
 const CLIENT_PUBLIC_PATHS = ["/client-login", "/client-forgot-password", "/client-reset-password", "/api/client/auth/login", "/api/client/auth/logout", "/api/client/auth/forgot-password"];
+const PWA_PUBLIC_PATHS = ["/manifest.webmanifest", "/sw.js", "/offline", "/icons"];
 
 function matches(path: string, entries: string[]) {
   return entries.some((entry) => path === entry || path.startsWith(`${entry}/`));
@@ -65,7 +66,7 @@ export async function proxy(request: NextRequest) {
 
   if (isCustomerHost && path === "/") return NextResponse.redirect(new URL("/client", request.url));
   if (isCustomerHost && matches(path, STAFF_PUBLIC_PATHS)) return NextResponse.redirect(new URL("/client-login", request.url));
-  if (matches(path, [...STAFF_PUBLIC_PATHS, ...CLIENT_PUBLIC_PATHS])) return NextResponse.next();
+  if (matches(path, [...STAFF_PUBLIC_PATHS, ...CLIENT_PUBLIC_PATHS, ...PWA_PUBLIC_PATHS])) return NextResponse.next();
 
   if (isCustomerHost && !isClientPath) {
     if (path.startsWith("/api/")) return NextResponse.json({ error: "Not found" }, { status: 404 });
