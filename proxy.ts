@@ -113,8 +113,9 @@ export async function proxy(request: NextRequest) {
   const host = request.headers.get("host")?.split(":")[0]?.toLowerCase();
   const customerHost = process.env.CLIENT_PORTAL_HOST?.toLowerCase();
   const platformAdminHost = (process.env.PLATFORM_ADMIN_HOST || "admin.kritechglobal.com").toLowerCase();
+  const controlOnly = process.env.PLATFORM_CONTROL_ONLY === "true";
   const isCustomerHost = Boolean(customerHost && host === customerHost);
-  const isPlatformHost = host === platformAdminHost;
+  const isPlatformHost = controlOnly || host === platformAdminHost;
   const isClientPath = path === "/client" || path.startsWith("/client/") || path === "/api/client" || path.startsWith("/api/client/");
   const isPlatformPath = path === "/platform-admin" || path.startsWith("/platform-admin/") || path === "/api/platform/admin" || path.startsWith("/api/platform/auth/");
 
