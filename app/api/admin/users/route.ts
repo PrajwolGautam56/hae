@@ -18,7 +18,9 @@ async function authorizedAdmin(request: Request) {
 }
 
 async function setupLink(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, email: string) {
-  const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3010"}/reset-password`;
+  const redirect = new URL("/reset-password", process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3010");
+  redirect.searchParams.set("company", "hamro-afno");
+  const redirectTo = redirect.toString();
   const { data, error } = await db.auth.admin.generateLink({ type: "recovery", email, options: { redirectTo } });
   if (error) throw error;
   const resetUrl = new URL(redirectTo);
@@ -34,7 +36,7 @@ export async function GET(request: Request) {
     const { data, error } = await db.from("team_members").select("id,name,email,phone,role,active,auth_user_id,created_at").order("created_at");
     if (error) throw error;
     return NextResponse.json({ users: data || [] });
-  } catch (error: any) { return NextResponse.json({ error: error?.message || "User management error" }, { status: 500 }); }
+  } catch (error: unknown) { return NextResponse.json({ error: error instanceof Error ? error.message : "User management error" }, { status: 500 }); }
 }
 
 export async function POST(request: Request) {
@@ -73,5 +75,5 @@ export async function POST(request: Request) {
     if(action==="role"){const role=["admin","manager","accountant","staff"].includes(body.role)?body.role:null;if(!role)return NextResponse.json({error:"Invalid role"},{status:400});const {data:member,error:readError}=await db.from("team_members").select("auth_user_id").eq("id",body.memberId).single();if(readError)throw readError;if(member.auth_user_id===user?.id&&role!=="admin")return NextResponse.json({error:"You cannot remove your own administrator role"},{status:400});const {error}=await db.from("team_members").update({role}).eq("id",body.memberId);if(error)throw error;if(member.auth_user_id)await db.auth.admin.updateUserById(member.auth_user_id,{user_metadata:{role}});return NextResponse.json({success:true})}
     if(action==="delete"){const {data:member,error:readError}=await db.from("team_members").select("auth_user_id").eq("id",body.memberId).single();if(readError)throw readError;if(member.auth_user_id===user?.id)return NextResponse.json({error:"You cannot delete your own signed-in administrator account"},{status:400});await db.from("money_accounts").update({active:false}).eq("team_member_id",body.memberId);const {error}=await db.from("team_members").delete().eq("id",body.memberId);if(error)throw error;if(member.auth_user_id){const {error:authError}=await db.auth.admin.deleteUser(member.auth_user_id);if(authError)throw authError}return NextResponse.json({success:true})}
     return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
-  } catch (error: any) { return NextResponse.json({ error: error?.message || "User management error" }, { status: 500 }); }
+  } catch (error: unknown) { return NextResponse.json({ error: error instanceof Error ? error.message : "User management error" }, { status: 500 }); }
 }

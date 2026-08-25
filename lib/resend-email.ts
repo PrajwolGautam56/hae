@@ -5,6 +5,8 @@ type EmailInput = {
   message: string;
   actionLabel?: string;
   actionUrl?: string;
+  brandName?: string;
+  footer?: string;
 };
 
 export async function sendTeamEmail(input: EmailInput) {
@@ -20,7 +22,7 @@ export async function sendTeamEmail(input: EmailInput) {
       from,
       to: [input.to],
       subject: input.subject,
-      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:28px;color:#17233d"><div style="font-size:24px;font-weight:800;color:#315fc8">हाम्रो खाता</div><h2 style="margin:24px 0 10px">${escapeHtml(input.heading)}</h2><p style="font-size:15px;line-height:1.65;color:#536078">${escapeHtml(input.message)}</p>${input.actionLabel ? `<a href="${escapeHtml(actionUrl)}" style="display:inline-block;margin-top:18px;padding:11px 18px;background:#315fc8;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">${escapeHtml(input.actionLabel)}</a>` : ""}<p style="margin-top:30px;font-size:12px;color:#97a0b0">Hamro Khata · Internal work notification</p></div>`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:28px;color:#17233d"><div style="font-size:24px;font-weight:800;color:#315fc8">${escapeHtml(input.brandName || "हाम्रो खाता")}</div><h2 style="margin:24px 0 10px">${escapeHtml(input.heading)}</h2><p style="font-size:15px;line-height:1.65;color:#536078">${escapeHtml(input.message)}</p>${input.actionLabel ? `<a href="${escapeHtml(actionUrl)}" style="display:inline-block;margin-top:18px;padding:11px 18px;background:#315fc8;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">${escapeHtml(input.actionLabel)}</a>` : ""}<p style="margin-top:30px;font-size:12px;color:#97a0b0">${escapeHtml(input.footer || "Hamro Khata · Internal work notification")}</p></div>`,
     }),
   });
   const result = await response.json();

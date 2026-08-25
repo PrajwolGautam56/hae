@@ -9,6 +9,7 @@ import "./portal-ui.css";
 import "./lead-location.css";
 import "./client-auth.css";
 import "./pwa.css";
+import "./platform-admin.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

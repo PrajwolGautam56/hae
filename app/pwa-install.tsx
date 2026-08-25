@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -8,9 +9,11 @@ interface InstallPromptEvent extends Event {
 }
 
 export default function PwaInstall() {
+  const pathname = usePathname();
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
 
   useEffect(() => {
+    if (pathname.startsWith("/platform-admin")) return;
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     }
@@ -30,9 +33,9 @@ export default function PwaInstall() {
       window.removeEventListener("beforeinstallprompt", capturePrompt);
       window.removeEventListener("appinstalled", clearPrompt);
     };
-  }, []);
+  }, [pathname]);
 
-  if (!installPrompt) return null;
+  if (!installPrompt || pathname.startsWith("/platform-admin")) return null;
 
   async function install() {
     await installPrompt?.prompt();
