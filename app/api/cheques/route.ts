@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { getCurrentMember } from "../../../lib/current-member";
 import { getSelectedBusinessCompany } from "../../../lib/company-context";
 import { requireFeature } from "../../../lib/feature-access";
+import { assertCompanyRecord, assertOptionalCompanyRecord } from "../../../lib/company-ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,10 @@ export async function POST(request:Request){
     const body=await request.json();const status=String(body.status||"");
     if(!["pending","cleared","cancelled"].includes(status))return NextResponse.json({error:"Invalid cheque status"},{status:400});
     if(status==="cleared"&&!body.destinationAccountId)return NextResponse.json({error:"Select where the cleared cheque amount was deposited"},{status:400});
+    await Promise.all([
+      assertCompanyRecord(db,"vouchers",body.chequeId,company.id,"Cheque receipt"),
+      assertOptionalCompanyRecord(db,"money_accounts",status==="cleared"?body.destinationAccountId:null,company.id,"Deposit account"),
+    ]);
     const {error}=await db.rpc("set_received_cheque_status",{p_voucher_id:body.chequeId,p_status:status,p_destination_account_id:status==="cleared"?body.destinationAccountId:null,p_approved_by:member.id});
     if(error)throw error;return NextResponse.json(await list());
   }catch(error:any){return NextResponse.json({error:error?.message||"Cheque update failed"},{status:500})}

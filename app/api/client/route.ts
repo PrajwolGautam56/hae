@@ -27,7 +27,7 @@ async function clientSnapshot(requestedFiscalYearId?: string) {
     db.from("companies").select("id,name,currency,logo_url,address,phone").eq("id", party.company_id).single(),
     db.from("fiscal_years").select("id,label_bs,start_ad,end_ad,status").eq("company_id",party.company_id).order("start_ad",{ascending:false}),
     db.from("products").select("id,sku,name,unit,sale_price,stock_qty,item_type").eq("company_id",party.company_id).eq("active",true).in("item_type",["finished_good","resale_good"]).order("name"),
-    db.from("customer_orders").select("id,order_no,status,notes,total,placed_at,updated_at,delivered_at,delivered_by,customer_order_lines(id,product_id,product_name,unit,quantity,unit_price,amount),customer_order_status_history(id,from_status,to_status,changed_by_type,note,created_at)").eq("party_id",party.id).order("placed_at",{ascending:false}),
+    db.from("customer_orders").select("id,order_no,status,notes,total,placed_at,updated_at,delivered_at,delivered_by,customer_order_lines(id,product_id,product_name,unit,quantity,unit_price,amount),customer_order_status_history(id,from_status,to_status,changed_by_type,note,created_at)").eq("company_id",party.company_id).eq("party_id",party.id).order("placed_at",{ascending:false}),
   ]);
   if (companyError || yearError || productError || orderError) throw companyError || yearError || productError || orderError;
   const today = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kathmandu",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
@@ -37,7 +37,7 @@ async function clientSnapshot(requestedFiscalYearId?: string) {
   if (!fiscalYear) throw new Error("Fiscal year not found");
   const [{ data: opening, error: openingError }, { data: ledger, error: ledgerError }] = await Promise.all([
     db.from("party_opening_balances").select("amount").eq("fiscal_year_id",fiscalYear.id).eq("party_id",party.id).maybeSingle(),
-    db.from("ledger_entries").select("id,entry_date,account_name,debit,credit,created_at,vouchers!inner(id,voucher_no,voucher_type,narration,payment_mode,fiscal_year_id)").eq("party_id",party.id).eq("vouchers.fiscal_year_id",fiscalYear.id).order("entry_date").order("created_at"),
+    db.from("ledger_entries").select("id,entry_date,account_name,debit,credit,created_at,vouchers!inner(id,voucher_no,voucher_type,narration,payment_mode,fiscal_year_id)").eq("company_id",party.company_id).eq("party_id",party.id).eq("vouchers.fiscal_year_id",fiscalYear.id).order("entry_date").order("created_at"),
   ]);
   if (openingError || ledgerError) throw openingError || ledgerError;
   let running = Number(opening?.amount || 0);
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       const { error } = await db.rpc("place_customer_order",{p_party_id:party.id,p_lines:lines,p_notes:String(body.notes||"")});
       if (error) throw error;
     } else if (action === "confirm_delivery") {
-      const { data: order } = await db.from("customer_orders").select("id,status").eq("id",body.orderId).eq("party_id",party.id).maybeSingle();
+      const { data: order } = await db.from("customer_orders").select("id,status").eq("id",body.orderId).eq("company_id",party.company_id).eq("party_id",party.id).maybeSingle();
       if (!order || order.status!=="sent") return NextResponse.json({ error: "Only dispatched orders can be confirmed delivered" }, { status: 400 });
       const { error } = await db.rpc("update_customer_order_status",{p_order_id:order.id,p_status:"delivered",p_changed_by_type:"customer",p_changed_by:party.id,p_note:"Delivery confirmed by buyer"});
       if (error) throw error;

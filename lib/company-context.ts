@@ -1,6 +1,6 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { getSupabaseAdmin } from "./supabase-server";
-import { COMPANY_COOKIE, type PlatformCompany } from "./platform-control";
+import { companiesForHost, COMPANY_COOKIE, type PlatformCompany } from "./platform-control";
 import { getCurrentMember } from "./current-member";
 
 type Db = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
@@ -25,11 +25,11 @@ function missingTenantColumns(message?: string) {
 
 export async function resolvePlatformBusinessCompany(db: Db, company: PlatformCompany) {
   if (company.appCompanyId) {
-    const byId = await db.from("companies").select(companyFields).eq("id", company.appCompanyId).maybeSingle();
+    const byId = await db.from("companies").select(companyFields).eq("id", company.appCompanyId).eq("organization_id", company.tenantId).maybeSingle();
     if (!byId.error && byId.data) return byId.data as BusinessCompany;
     if (byId.error && !missingTenantColumns(byId.error.message)) throw byId.error;
   }
-  const bySlug = await db.from("companies").select(companyFields).eq("slug", company.slug).maybeSingle();
+  const bySlug = await db.from("companies").select(companyFields).eq("organization_id", company.tenantId).eq("slug", company.slug).maybeSingle();
   if (!bySlug.error && bySlug.data) return bySlug.data as BusinessCompany;
   if (bySlug.error && !missingTenantColumns(bySlug.error.message)) throw bySlug.error;
   if (company.connectionKey === "HAE") {
@@ -43,10 +43,16 @@ export async function resolvePlatformBusinessCompany(db: Db, company: PlatformCo
 export async function getSelectedBusinessCompany(db: Db) {
   const companySlug = (await cookies()).get(COMPANY_COOKIE)?.value;
   if (companySlug) {
-    const selected = await db.from("companies").select(companyFields).eq("slug", companySlug).eq("active", true).maybeSingle();
+    const requestHeaders = await headers();
+    const registry = await companiesForHost(requestHeaders.get("x-forwarded-host") || requestHeaders.get("host"));
+    let query = db.from("companies").select(companyFields).eq("slug", companySlug).eq("active", true);
+    if (registry?.tenant.id) query = query.eq("organization_id", registry.tenant.id);
+    const selected = await query.maybeSingle();
     if (!selected.error && selected.data) return selected.data as BusinessCompany;
     if (selected.error && !missingTenantColumns(selected.error.message)) throw selected.error;
+    if (process.env.UNIFIED_SUPABASE_URL) throw new Error("Selected company does not belong to this workspace");
   }
+  if (process.env.UNIFIED_SUPABASE_URL) throw new Error("Select a company before continuing");
   const legacy = await db.from("companies").select(legacyCompanyFields).order("created_at").limit(1).maybeSingle();
   if (legacy.error) throw legacy.error;
   if (!legacy.data) throw new Error("Company not found");

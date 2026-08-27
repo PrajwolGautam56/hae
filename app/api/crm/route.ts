@@ -4,6 +4,7 @@ import { sendTeamEmail } from "../../../lib/resend-email";
 import { NEPAL_PROVINCES, provinceForDistrict } from "../../../lib/nepal-address";
 import { getBusinessContext } from "../../../lib/company-context";
 import { requireFeature } from "../../../lib/feature-access";
+import { assertCompanyRecord, assertOptionalCompanyRecord } from "../../../lib/company-ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -74,36 +75,52 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdmin();
     if (!supabase) throw new Error("Supabase server configuration is missing");
     const body = await request.json();
-    const company = await getCompany(supabase);
+    const { company, member: currentMember } = await getBusinessContext(supabase);
     const action = String(body.action || "");
     let error: { message: string } | null = null;
 
     if (action === "create_lead") {
       if (!String(body.name || "").trim() || !String(body.phone || "").trim()) return NextResponse.json({ error: "Name and phone are required" }, { status: 400 });
+      await assertOptionalCompanyRecord(supabase, "team_members", body.assignedTo, company.id, "Lead assignee");
       ({ error } = await supabase.from("leads").insert({ company_id: company.id, name: String(body.name).trim(), phone: String(body.phone).trim(), source: body.source || "social_media", interest: cleanOptional(body.interest), assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, ...leadLocation(body) }));
     } else if (action === "create_member") {
+      if (currentMember.role !== "admin") return NextResponse.json({ error: "Only a company administrator can add team members" }, { status: 403 });
       if (!String(body.name || "").trim()) return NextResponse.json({ error: "Team member name is required" }, { status: 400 });
       ({ error } = await supabase.from("team_members").insert({ company_id: company.id, name: String(body.name).trim(), phone: body.phone || null, email: body.email || null, role: body.role || "staff" }));
     } else if (action === "create_task") {
       if (!String(body.title || "").trim()) return NextResponse.json({ error: "Task title is required" }, { status: 400 });
+      await Promise.all([
+        assertOptionalCompanyRecord(supabase, "team_members", body.assignedTo, company.id, "Task assignee"),
+        assertOptionalCompanyRecord(supabase, "leads", body.leadId, company.id, "Task lead"),
+        assertOptionalCompanyRecord(supabase, "parties", body.partyId, company.id, "Task party"),
+      ]);
       ({ error } = await supabase.from("work_tasks").insert({ company_id: company.id, title: String(body.title).trim(), description: body.description || null, task_type: body.taskType || "general", priority: body.priority || "medium", assigned_to: body.assignedTo || null, lead_id: body.leadId || null, party_id: body.partyId || null, due_at: body.dueAt || null }));
       if (!error) await notifyMember(supabase, body.assignedTo || null, `New task: ${body.title}`, "A new task was assigned to you", `${body.title}${body.dueAt ? ` · Due ${new Date(body.dueAt).toLocaleString("en-GB")}` : ""}.`);
     } else if (action === "add_activity") {
       if (!body.leadId && !body.partyId) return NextResponse.json({ error: "Select a lead or party" }, { status: 400 });
+      await Promise.all([
+        assertOptionalCompanyRecord(supabase, "team_members", body.memberId, company.id, "Activity owner"),
+        assertOptionalCompanyRecord(supabase, "leads", body.leadId, company.id, "Activity lead"),
+        assertOptionalCompanyRecord(supabase, "parties", body.partyId, company.id, "Activity party"),
+      ]);
       const row = { company_id: company.id, activity_type: body.activityType || "note", subject: body.subject || null, remarks: String(body.remarks || "").trim(), outcome: body.outcome || null, member_id: body.memberId || null, lead_id: body.leadId || null, party_id: body.partyId || null, happened_at: body.happenedAt || new Date().toISOString(), next_action_at: body.nextActionAt || null };
       if (!row.remarks) return NextResponse.json({ error: "Remarks are required" }, { status: 400 });
       ({ error } = await supabase.from("crm_activities").insert(row));
-      if (!error && body.leadId) await supabase.from("leads").update({ last_contact_at: row.happened_at, next_follow_up_at: row.next_action_at }).eq("id", body.leadId);
+      if (!error && body.leadId) await supabase.from("leads").update({ last_contact_at: row.happened_at, next_follow_up_at: row.next_action_at }).eq("id", body.leadId).eq("company_id", company.id);
       if (!error && body.nextActionAt) ({ error } = await supabase.from("work_tasks").insert({ company_id: company.id, title: body.taskTitle || `${body.activityType === "meeting" ? "Meeting" : "Follow up"}: ${body.subject || "client"}`, task_type: body.activityType === "meeting" ? "meeting" : body.activityType === "payment_collection" ? "payment_collection" : "call", assigned_to: body.memberId || null, lead_id: body.leadId || null, party_id: body.partyId || null, due_at: body.nextActionAt, priority: body.priority || "medium" }));
       if (!error && body.nextActionAt) await notifyMember(supabase, body.memberId || null, "Follow-up scheduled", body.taskTitle || "A client follow-up was scheduled", `The next action is due ${new Date(body.nextActionAt).toLocaleString("en-GB")}.`);
     } else if (action === "update_lead") {
+      await Promise.all([assertCompanyRecord(supabase, "leads", body.leadId, company.id, "Lead"), assertOptionalCompanyRecord(supabase, "team_members", body.assignedTo, company.id, "Lead assignee")]);
       ({ error } = await supabase.from("leads").update({ status: body.status, assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, updated_at: new Date().toISOString() }).eq("id", body.leadId).eq("company_id", company.id));
     } else if (action === "update_lead_profile") {
       if (!String(body.name || "").trim() || !String(body.phone || "").trim()) return NextResponse.json({ error: "Name and phone are required" }, { status: 400 });
+      await Promise.all([assertCompanyRecord(supabase, "leads", body.leadId, company.id, "Lead"), assertOptionalCompanyRecord(supabase, "team_members", body.assignedTo, company.id, "Lead assignee")]);
       ({ error } = await supabase.from("leads").update({ name: String(body.name).trim(), phone: String(body.phone).trim(), source: body.source || "social_media", interest: cleanOptional(body.interest), assigned_to: body.assignedTo || null, next_follow_up_at: body.nextFollowUpAt || null, ...leadLocation(body), updated_at: new Date().toISOString() }).eq("id", body.leadId).eq("company_id", company.id));
     } else if (action === "complete_task") {
+      await assertCompanyRecord(supabase, "work_tasks", body.taskId, company.id, "Task");
       ({ error } = await supabase.from("work_tasks").update({ status: "done", completed_at: new Date().toISOString() }).eq("id", body.taskId).eq("company_id", company.id));
     } else if (action === "convert_lead") {
+      await assertCompanyRecord(supabase, "leads", body.leadId, company.id, "Lead");
       ({ error } = await supabase.rpc("convert_lead_to_party", { p_lead_id: body.leadId }));
     } else return NextResponse.json({ error: "Unsupported CRM action" }, { status: 400 });
     if (error) throw error;

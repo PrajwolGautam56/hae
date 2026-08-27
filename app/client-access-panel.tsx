@@ -19,7 +19,6 @@ export default function ClientAccessPanel({ onNotice }: { onNotice: (message: st
   const [parties, setParties] = useState<PartyAccess[]>([]);
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [busy, setBusy] = useState("");
-  const [passwords, setPasswords] = useState<Record<string, string>>({});
   const [form, setForm] = useState({ partyId: "", email: "", password: "", sendEmail: true });
 
   async function request(body?: Record<string, unknown>) {
@@ -50,18 +49,12 @@ export default function ClientAccessPanel({ onNotice }: { onNotice: (message: st
     const saved = await act("create", { action: "create", ...form }, "Customer login created. The initial password works immediately.");
     if (saved) setForm({ partyId: "", email: "", password: "", sendEmail: true });
   }
-  async function setPassword(party: PartyAccess) {
-    const password = passwords[party.id] || "";
-    const saved = await act(`password:${party.id}`, { action: "set_password", partyId: party.id, password }, `New password saved for ${party.name}`);
-    if (saved) setPasswords((current) => ({ ...current, [party.id]: "" }));
-  }
-
   if (allowed === null) return <article id="client-access" className="card client-access-loading">Checking client portal access…</article>;
   if (!allowed) return null;
   const available = parties.filter((party) => !party.auth_user_id);
   const enabled = parties.filter((party) => party.auth_user_id);
   return <article id="client-access" className="card client-access-panel">
-    <div className="card-title"><div><h3>Customer portal access</h3><p>Create a working login, set passwords directly and review sign-in health.</p></div></div>
+    <div className="card-title"><div><h3>Customer portal access</h3><p>Create customer logins and manage access without exposing or overwriting user passwords.</p></div></div>
     <div className="client-access-grid">
       <section>
         <h4>Create customer login</h4>
@@ -77,7 +70,7 @@ export default function ClientAccessPanel({ onNotice }: { onNotice: (message: st
         <div className="client-access-list">{enabled.map((party) => <div className="client-access-account" key={party.id}>
           <span><strong>{party.name}</strong><small>{party.portal_email}</small><small className={party.last_sign_in_at ? "signed-in" : "never-signed-in"}>{!party.auth_exists ? "Authentication link is broken" : party.last_sign_in_at ? `Last login ${formatBs(party.last_sign_in_at, true)}` : "Never logged in"}</small></span>
           <em className={party.portal_active && party.auth_exists ? "active" : "inactive"}>{party.portal_active && party.auth_exists ? "Active" : "Attention"}</em>
-          <div className="client-account-actions"><div className="client-password-control"><input type="password" minLength={8} value={passwords[party.id] || ""} onChange={(event) => setPasswords((current) => ({ ...current, [party.id]: event.target.value }))} placeholder="Set a new password" /><button disabled={Boolean(busy) || (passwords[party.id] || "").length < 8} onClick={() => setPassword(party)}>{busy === `password:${party.id}` ? "Saving…" : "Set password"}</button></div><button disabled={Boolean(busy)} onClick={() => act(`reset:${party.id}`, { action: "reset", partyId: party.id }, "Password reset email sent")}>Send reset email</button><button disabled={Boolean(busy)} onClick={() => act(`status:${party.id}`, { action: "status", partyId: party.id, active: !party.portal_active }, party.portal_active ? "Customer portal disabled" : "Customer portal enabled")}>{party.portal_active ? "Disable" : "Enable"}</button></div>
+          <div className="client-account-actions"><span className="client-access-security-note">Passwords are changed only by the customer through a one-time secure email link.</span><button disabled={Boolean(busy)} onClick={() => act(`reset:${party.id}`, { action: "reset", partyId: party.id }, "Password reset email sent")}>Send reset email</button><button disabled={Boolean(busy)} onClick={() => act(`status:${party.id}`, { action: "status", partyId: party.id, active: !party.portal_active }, party.portal_active ? "Customer portal disabled" : "Customer portal enabled")}>{party.portal_active ? "Disable" : "Enable"}</button></div>
         </div>)}{!enabled.length && <p>No customer login created yet.</p>}</div>
       </section>
     </div>

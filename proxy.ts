@@ -10,6 +10,13 @@ const PLATFORM_REFRESH_COOKIE = "kritech_platform_refresh";
 
 type BusinessConfig = { url: string; key: string; secret: string };
 
+function tenantSlugForHost(host?: string) {
+  if (!host || host === "localhost" || host === "127.0.0.1") return process.env.DEFAULT_TENANT_SLUG || "hamro";
+  if (host === "crm.hamroafno.com.np" || host === "m.hamroafno.com.np") return "hamro";
+  const root = (process.env.PLATFORM_ROOT_DOMAIN || "kritechglobal.com").toLowerCase();
+  return host.endsWith(`.${root}`) ? host.slice(0, -(root.length + 1)).split(".").pop() || "hamro" : process.env.DEFAULT_TENANT_SLUG || "hamro";
+}
+
 function businessConfig(companySlug: string | undefined): BusinessConfig | null {
   const unifiedUrl = process.env.UNIFIED_SUPABASE_URL;
   const unifiedKey = process.env.UNIFIED_SUPABASE_PUBLISHABLE_KEY;
@@ -41,14 +48,22 @@ function matches(path: string, entries: string[]) {
   return entries.some((entry) => path === entry || path.startsWith(`${entry}/`));
 }
 
-async function lookupIdentity(token: string, table: "team_members" | "parties", activeColumn: "active" | "portal_active", config: BusinessConfig, companySlug?: string) {
+async function lookupIdentity(token: string, table: "team_members" | "parties", activeColumn: "active" | "portal_active", config: BusinessConfig, companySlug?: string, tenantSlug?: string) {
   const validation = await fetch(`${config.url}/auth/v1/user`, { headers: { apikey: config.key, Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!validation.ok) return false;
   const user = await validation.json() as { id?: string };
   if (!user.id) return false;
   let companyFilter = "";
   if (companySlug) {
-    const companyResponse = await fetch(`${config.url}/rest/v1/companies?slug=eq.${encodeURIComponent(companySlug)}&active=eq.true&select=id&limit=1`, { headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` }, cache: "no-store" });
+    let organizationFilter = "";
+    if (process.env.UNIFIED_SUPABASE_URL && tenantSlug) {
+      const tenantResponse = await fetch(`${config.url}/rest/v1/platform_tenants?slug=eq.${encodeURIComponent(tenantSlug)}&active=eq.true&select=id&limit=1`, { headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` }, cache: "no-store" });
+      if (!tenantResponse.ok) return false;
+      const tenants = await tenantResponse.json() as Array<{ id: string }>;
+      if (!tenants[0]?.id) return false;
+      organizationFilter = `&organization_id=eq.${encodeURIComponent(tenants[0].id)}`;
+    }
+    const companyResponse = await fetch(`${config.url}/rest/v1/companies?slug=eq.${encodeURIComponent(companySlug)}${organizationFilter}&active=eq.true&select=id&limit=1`, { headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` }, cache: "no-store" });
     if (companyResponse.ok) {
       const companies = await companyResponse.json() as Array<{ id: string }>;
       if (!companies[0]?.id) return false;
@@ -131,6 +146,7 @@ export async function proxy(request: NextRequest) {
   const isPlatformHost = controlOnly || host === platformAdminHost;
   const isClientPath = path === "/client" || path.startsWith("/client/") || path === "/api/client" || path.startsWith("/api/client/");
   const isPlatformPath = path === "/platform-admin" || path.startsWith("/platform-admin/") || path === "/api/platform/admin" || path.startsWith("/api/platform/auth/");
+  const tenantSlug = tenantSlugForHost(host);
 
   if (isPlatformHost && path === "/") return NextResponse.redirect(new URL("/platform-admin", request.url));
   if (isPlatformHost && !isPlatformPath && !matches(path, PWA_PUBLIC_PATHS)) {
@@ -166,11 +182,11 @@ export async function proxy(request: NextRequest) {
     const clientConfig = businessConfig(selectedCompany);
     if (!clientConfig) return NextResponse.json({ error: "Customer portal configuration is missing" }, { status: 503 });
     const token = request.cookies.get("hae_party_access_token")?.value;
-    if (token && await lookupIdentity(token, "parties", "portal_active", clientConfig, selectedCompany)) return NextResponse.next();
+    if (token && await lookupIdentity(token, "parties", "portal_active", clientConfig, selectedCompany, tenantSlug)) return NextResponse.next();
     const refreshToken = request.cookies.get("hae_party_refresh_token")?.value;
     if (refreshToken) {
       const session = await refreshSession(refreshToken, clientConfig);
-      if (session && await lookupIdentity(session.access_token, "parties", "portal_active", clientConfig, selectedCompany)) return continueWithClientSession(request, session);
+      if (session && await lookupIdentity(session.access_token, "parties", "portal_active", clientConfig, selectedCompany, tenantSlug)) return continueWithClientSession(request, session);
     }
     if (path.startsWith("/api/")) return clearClientSession(NextResponse.json({ error: "Customer sign-in required" }, { status: 401 }));
     const login = new URL("/client-login", request.url);
@@ -180,7 +196,7 @@ export async function proxy(request: NextRequest) {
   const selectedCompany = request.cookies.get(COMPANY_COOKIE)?.value;
   const selectedConfig = businessConfig(selectedCompany);
   const token = request.cookies.get("hae_access_token")?.value;
-  if (selectedConfig && token && await lookupIdentity(token, "team_members", "active", selectedConfig, selectedCompany)) return NextResponse.next();
+  if (selectedConfig && token && await lookupIdentity(token, "team_members", "active", selectedConfig, selectedCompany, tenantSlug)) return NextResponse.next();
   if (path.startsWith("/api/")) return clearStaffSession(NextResponse.json({ error: "Authentication required" }, { status: 401 }));
   const login = new URL("/login", request.url);
   login.searchParams.set("next", `${path}${request.nextUrl.search}`);

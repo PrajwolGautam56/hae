@@ -86,6 +86,8 @@ export async function POST(request: Request) {
     if (action === "reset") {
       const email = String(body.email || "").trim().toLowerCase();
       if (!email) return NextResponse.json({ error: "Email is required" }, { status: 400 });
+      const { data: target } = await db.from("team_members").select("id").eq("company_id", company.id).ilike("email", email).eq("active", true).maybeSingle();
+      if (!target) return NextResponse.json({ error: "Active user was not found in this company" }, { status: 404 });
       const link = await setupLink(db, email, company.slug || "hamro-afno");
       await sendTeamEmail({ to: email, subject: "Reset your Hamro Afno password", heading: "Password reset requested", message: "Use this secure link to choose a new password. The link should only be used by you.", actionLabel: "Reset password", actionUrl: link });
       return NextResponse.json({ success: true });

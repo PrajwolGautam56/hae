@@ -90,8 +90,9 @@ do $$ begin
     references public.companies(id) on delete set null;
 exception when duplicate_object then null; end $$;
 
-create unique index if not exists companies_slug_unique
-  on public.companies(slug) where slug is not null;
+drop index if exists public.companies_slug_unique;
+create unique index if not exists companies_organization_slug_unique
+  on public.companies(organization_id,slug) where organization_id is not null and slug is not null;
 create unique index if not exists companies_platform_company_unique
   on public.companies(platform_company_id) where platform_company_id is not null;
 create index if not exists companies_organization_idx on public.companies(organization_id, active);
@@ -201,7 +202,8 @@ alter table public.platform_companies enable row level security;
 alter table public.platform_subscriptions enable row level security;
 alter table public.platform_entitlements enable row level security;
 revoke all on table public.user_profiles, public.platform_tenants, public.platform_companies, public.platform_subscriptions, public.platform_entitlements from anon, authenticated;
-grant select, update on table public.user_profiles to authenticated;
+grant select on table public.user_profiles to authenticated;
+grant update(name,phone,updated_at) on table public.user_profiles to authenticated;
 
 drop policy if exists user_profiles_self_select on public.user_profiles;
 create policy user_profiles_self_select on public.user_profiles for select to authenticated

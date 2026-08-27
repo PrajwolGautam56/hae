@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { getCurrentMember } from "../../../lib/current-member";
 import { getSelectedBusinessCompany } from "../../../lib/company-context";
 import { requireFeature } from "../../../lib/feature-access";
+import { assertCompanyRecord, assertOptionalCompanyRecord } from "../../../lib/company-ownership";
 
 export const dynamic = "force-dynamic";
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
       if (!sourceId || !destinationId || sourceId === destinationId) return NextResponse.json({ error: "Select different source and destination accounts" }, { status: 400 });
       const { data: source, error: sourceError } = await db.from("money_accounts").select("id,team_member_id").eq("id", sourceId).eq("company_id", company.id).single();
       if (sourceError) throw sourceError;
+      await assertCompanyRecord(db, "money_accounts", destinationId, company.id, "Destination account");
       if (!privileged && source.team_member_id !== member.id) return NextResponse.json({ error: "You can transfer only from your own wallet" }, { status: 403 });
       const { error } = await db.rpc("record_money_transfer", { p_company_id: company.id, p_fiscal_year_id: fiscalYear.id, p_from_account_id: sourceId, p_to_account_id: destinationId, p_amount: amount, p_date: String(body.date || businessDate()), p_title: String(body.title || "Cash handover / transfer"), p_notes: String(body.notes || ""), p_generated_by: member.id, p_approved_by: privileged ? member.id : null });
       if (error) throw error;
@@ -78,6 +80,7 @@ export async function POST(request: Request) {
       if (!privileged && source.team_member_id !== member.id) return NextResponse.json({ error: "You can pay only from your own wallet" }, { status: 403 });
       const amount = Number(body.amount);
       if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: "Enter a valid amount" }, { status: 400 });
+      await assertOptionalCompanyRecord(db, "parties", body.partyId, company.id, "Payment party");
       const { error } = await db.rpc("record_accounting_voucher", { p_company_id: company.id, p_fiscal_year_id: fiscalYear.id, p_party_id: body.partyId || null, p_type: body.asExpense ? "expense" : "payment", p_amount: amount, p_date: String(body.date || businessDate()), p_narration: String(body.title || "Payment given"), p_payment_mode: String(body.paymentMode || "Cash"), p_generated_by: member.id, p_handled_by: member.id, p_money_account_id: sourceId, p_movement_status: "posted" });
       if (error) throw error;
     } else return NextResponse.json({ error: "Unsupported funds action" }, { status: 400 });

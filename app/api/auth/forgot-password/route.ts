@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { businessAuthConfig, loginCompany } from "../../../../lib/platform-control";
 import { sendTeamEmail } from "../../../../lib/resend-email";
+import { resolvePlatformBusinessCompany } from "../../../../lib/company-context";
 
 const generic = "If this email belongs to an active account in the selected company, a secure reset link has been sent.";
 
@@ -18,7 +19,9 @@ export async function POST(request: Request) {
     const config = businessAuthConfig(selected.company.connectionKey);
     if (!config) throw new Error("Selected company authentication is not configured");
     const db = createClient(config.url, config.secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data: member } = await db.from("team_members").select("name,email,active,auth_user_id").eq("email", email).maybeSingle();
+    const company = await resolvePlatformBusinessCompany(db, selected.company);
+    if (!company) return NextResponse.json({ message: generic });
+    const { data: member } = await db.from("team_members").select("name,email,active,auth_user_id").eq("company_id", company.id).eq("email", email).maybeSingle();
     if (!member?.active || !member.auth_user_id) return NextResponse.json({ message: generic });
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3010";
     const redirect = new URL("/reset-password", appUrl);

@@ -4,6 +4,7 @@ export const COMPANY_COOKIE = "hae_company";
 
 export type PlatformCompany = {
   id: string;
+  tenantId: string;
   appCompanyId: string | null;
   slug: string;
   name: string;
@@ -34,6 +35,7 @@ const fallback: TenantCompanies = {
   companies: [
     {
       id: "20000000-0000-4000-8000-000000000001",
+      tenantId: "10000000-0000-4000-8000-000000000001",
       appCompanyId: null,
       slug: "hamro-afno",
       name: "Hamro Aafno Enterprises",
@@ -43,6 +45,7 @@ const fallback: TenantCompanies = {
     },
     {
       id: "20000000-0000-4000-8000-000000000002",
+      tenantId: "10000000-0000-4000-8000-000000000001",
       appCompanyId: null,
       slug: "ag-manufacturing",
       name: "A.G. Manufacturing & Trading",
@@ -123,6 +126,7 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
         tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, domain: tenant.primary_domain },
         companies: companies.map((company) => ({
           id: String(company.id),
+          tenantId: tenant.id,
           appCompanyId: "app_company_id" in company ? String(company.app_company_id || "") || null : null,
           slug: String(company.slug),
           name: String(company.name),

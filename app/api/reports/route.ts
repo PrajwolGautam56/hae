@@ -67,9 +67,9 @@ export async function GET(request: Request) {
     let party = null;
     if (partyId) {
       const [{ data: partyRow, error: partyError }, { data: openingRow, error: openingError }, { data: earlier, error: earlierError }] = await Promise.all([
-        db.from("parties").select("id,name,place,phone,tax_no,opening_balance").eq("id", partyId).single(),
+        db.from("parties").select("id,name,place,phone,tax_no,opening_balance").eq("id", partyId).eq("company_id", company.id).single(),
         db.from("party_opening_balances").select("amount").eq("fiscal_year_id", fy.id).eq("party_id", partyId).maybeSingle(),
-        db.from("ledger_entries").select("debit,credit,vouchers!inner(fiscal_year_id)").eq("party_id", partyId).eq("vouchers.fiscal_year_id", fy.id).gte("entry_date", fy.start_ad).lt("entry_date", dateFrom),
+        db.from("ledger_entries").select("debit,credit,vouchers!inner(fiscal_year_id)").eq("company_id", company.id).eq("party_id", partyId).eq("vouchers.fiscal_year_id", fy.id).gte("entry_date", fy.start_ad).lt("entry_date", dateFrom),
       ]);
       if (partyError || openingError || earlierError) throw partyError || openingError || earlierError;
       party = partyRow;

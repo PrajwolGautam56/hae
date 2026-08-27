@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       const password = String(body.password || "");
       if (!email) return NextResponse.json({ error: "Customer email is required" }, { status: 400 });
       if (password.length < 8) return NextResponse.json({ error: "Create an initial password with at least 8 characters" }, { status: 400 });
-      if (party.auth_user_id) return NextResponse.json({ error: "This party already has a portal login. Use Set password instead." }, { status: 400 });
+      if (party.auth_user_id) return NextResponse.json({ error: "This party already has a portal login. Send a secure reset email instead." }, { status: 400 });
       const { data: emailOwner } = await db.from("parties").select("id,name").eq("company_id", member!.company_id).ilike("portal_email", email).not("auth_user_id", "is", null).maybeSingle();
       if (emailOwner) return NextResponse.json({ error: `This email is already used by ${emailOwner.name}` }, { status: 409 });
       let authUser = await authUserByEmail(db, email);
@@ -74,20 +74,15 @@ export async function POST(request: Request) {
       }
       const { error: updateError } = await db.from("parties").update({ auth_user_id: authUser.id, portal_email: email, portal_active: true }).eq("id", party.id).eq("company_id", member!.company_id);
       if (updateError) { if (createdAuth) await db.auth.admin.deleteUser(authUser.id); throw updateError; }
-      if (body.sendEmail !== false) {
+      if (!createdAuth) warning = "This email already had a Kritech login. Its existing password was not changed; a secure setup/reset email was sent to the account owner.";
+      if (body.sendEmail !== false || !createdAuth) {
         try { await sendClientPasswordEmail(db, { email, name: party.name }); }
-        catch (emailError) { console.error("Customer setup email failed", emailError); warning = "Login was created and the initial password works, but the setup email could not be delivered."; }
+        catch (emailError) { console.error("Customer setup email failed", emailError); warning = createdAuth ? "Login was created and the initial password works, but the setup email could not be delivered." : "The existing Kritech identity was linked without changing its password, but the setup email could not be delivered."; }
       }
     } else if (action === "set_password") {
-      const password = String(body.password || "");
-      if (!party.auth_user_id) return NextResponse.json({ error: "Create customer access first" }, { status: 400 });
-      if (password.length < 8) return NextResponse.json({ error: "Password must contain at least 8 characters" }, { status: 400 });
-      const { error } = await db.auth.admin.updateUserById(party.auth_user_id, { password, email_confirm: true, user_metadata: { name: party.name, account_type: "customer" } });
-      if (error) throw error;
-      const { error: partyUpdateError } = await db.from("parties").update({ portal_active: true }).eq("id", party.id);
-      if (partyUpdateError) throw partyUpdateError;
+      return NextResponse.json({ error: "For tenant security, company administrators cannot overwrite a shared login password. Send the customer a secure reset email." }, { status: 403 });
     } else if (action === "status") {
-      const { error } = await db.from("parties").update({ portal_active: Boolean(body.active) }).eq("id", party.id);
+      const { error } = await db.from("parties").update({ portal_active: Boolean(body.active) }).eq("id", party.id).eq("company_id", member!.company_id);
       if (error) throw error;
     } else if (action === "reset") {
       if (!party.portal_email || !party.auth_user_id) return NextResponse.json({ error: "Customer login email is missing" }, { status: 400 });

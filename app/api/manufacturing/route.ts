@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { getBusinessContext } from "../../../lib/company-context";
 import { requireFeature } from "../../../lib/feature-access";
+import { assertCompanyRecord, assertCompanyRecords } from "../../../lib/company-ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,12 @@ export async function POST(request: Request) {
     if (!db) throw new Error("Supabase configuration is missing");
     const selectedCompany = await company(db);
     const body = await request.json();
+    const consumptionIds = Array.isArray(body.consumptions) ? body.consumptions.map((item: unknown) => typeof item === "object" && item !== null ? (item as Record<string, unknown>).product_id : null) : [];
+    await Promise.all([
+      assertCompanyRecord(db, "fiscal_years", body.fiscalYearId, selectedCompany.id, "Fiscal year"),
+      assertCompanyRecord(db, "products", body.outputProductId, selectedCompany.id, "Output product"),
+      assertCompanyRecords(db, "products", consumptionIds, selectedCompany.id, "Consumed products"),
+    ]);
     const { data, error } = await db.rpc("record_production_batch", {
       p_company_id: selectedCompany.id, p_fiscal_year_id: body.fiscalYearId,
       p_date: body.date, p_output_product_id: body.outputProductId,
