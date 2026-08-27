@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { authorizePlatformAdmin, canManage, canManageAdmins, writePlatformAudit } from "../../../../lib/platform-admin";
 import { sendTeamEmail } from "../../../../lib/resend-email";
+import { getUnifiedAdmin } from "../../../../lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ const companyStatuses = ["active", "pending", "disabled"];
 const databaseStatuses = ["pending", "connecting", "ready", "error"];
 const subscriptionStatuses = ["trial", "active", "past_due", "cancelled", "expired"];
 const adminRoles = ["super_admin", "operator", "support", "viewer"];
+const featureKeys = ["accounting", "sales", "purchases", "inventory", "manufacturing", "crm", "tasks", "orders", "customer_portal", "cash_bank", "cheques", "reports"];
 
 function cleanSlug(value: unknown) {
   return String(value || "").trim().toLowerCase();
@@ -21,16 +23,48 @@ function textOrNull(value: unknown) {
   return text || null;
 }
 
+async function provisionUnifiedCompany(
+  controlDb: Awaited<ReturnType<typeof authorizePlatformAdmin>>["db"],
+  tenantId: string,
+  platformCompany: { id: string; slug: string; name: string },
+) {
+  const unified = getUnifiedAdmin();
+  if (!unified) return null;
+  const { data: tenant, error: tenantError } = await controlDb.from("platform_tenants")
+    .select("id,slug,name,primary_domain,status,active,contact_name,contact_email,contact_phone,address,notes,onboarding_stage")
+    .eq("id", tenantId).single();
+  if (tenantError) throw tenantError;
+  const { error: mirrorTenantError } = await unified.from("platform_tenants").upsert(tenant, { onConflict: "id" });
+  if (mirrorTenantError) throw mirrorTenantError;
+  const { error: mirrorCompanyError } = await unified.from("platform_companies").upsert({
+    id: platformCompany.id, tenant_id: tenantId, slug: platformCompany.slug,
+    name: platformCompany.name, legal_name: platformCompany.name, status: "active",
+    login_enabled: false, database_status: "ready", portal_enabled: false,
+  }, { onConflict: "id" });
+  if (mirrorCompanyError) throw mirrorCompanyError;
+  const existing = await unified.from("companies").select("id").eq("platform_company_id", platformCompany.id).maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) return existing.data.id;
+  const { data: businessCompany, error: businessError } = await unified.from("companies").insert({
+    organization_id: tenantId, platform_company_id: platformCompany.id, slug: platformCompany.slug,
+    name: platformCompany.name, currency: "NPR", fiscal_year: "BS", active: true,
+  }).select("id").single();
+  if (businessError) throw businessError;
+  await unified.from("platform_companies").update({ app_company_id: businessCompany.id }).eq("id", platformCompany.id);
+  return businessCompany.id;
+}
+
 export async function GET(request: Request) {
   try {
     const { db, admin } = await authorizePlatformAdmin(request);
     if (!admin) return NextResponse.json({ error: "Platform administrator sign-in required" }, { status: 401 });
-    const [tenants, companies, subscriptions, administrators, audits] = await Promise.all([
+    const [tenants, companies, subscriptions, administrators, audits, entitlements] = await Promise.all([
       db.from("platform_tenants").select("id,slug,name,primary_domain,status,active,contact_name,contact_email,contact_phone,address,notes,onboarding_stage,created_at,updated_at").order("created_at", { ascending: false }),
       db.from("platform_companies").select("id,tenant_id,slug,name,legal_name,connection_key,status,login_enabled,sort_order,project_ref,region,database_status,portal_enabled,notes,created_at,updated_at").order("created_at", { ascending: false }),
       db.from("platform_subscriptions").select("id,tenant_id,plan_name,status,starts_on,expires_on,company_limit,user_limit,monthly_amount,notes,updated_at"),
       db.from("platform_admins").select("id,name,email,role,active,last_login_at,created_at").order("created_at"),
       db.from("platform_audit_logs").select("id,admin_email,action,entity_type,entity_id,summary,metadata,ip_address,created_at").order("created_at", { ascending: false }).limit(100),
+      db.from("platform_entitlements").select("tenant_id,feature_key,enabled,limits"),
     ]);
     const firstError = [tenants.error, companies.error, subscriptions.error, administrators.error, audits.error].find(Boolean);
     if (firstError) throw firstError;
@@ -41,6 +75,8 @@ export async function GET(request: Request) {
       subscriptions: subscriptions.data || [],
       administrators: administrators.data || [],
       audits: audits.data || [],
+      entitlements: entitlements.data || [],
+      entitlementMigrationRequired: Boolean(entitlements.error),
       rootDomain: process.env.PLATFORM_ROOT_DOMAIN || "kritechglobal.com",
     });
   } catch (error: unknown) {
@@ -81,6 +117,10 @@ export async function POST(request: Request) {
         await db.from("platform_tenants").delete().eq("id", tenant.id);
         throw subscriptionError;
       }
+      const { error: entitlementError } = await db.from("platform_entitlements").insert(
+        featureKeys.map((featureKey) => ({ tenant_id: tenant.id, feature_key: featureKey, enabled: ["accounting", "sales", "purchases", "inventory", "reports"].includes(featureKey) })),
+      );
+      if (entitlementError && !/platform_entitlements.*(does not exist|schema cache)/i.test(entitlementError.message)) throw entitlementError;
       await writePlatformAudit(db, admin, request, { action, entityType: "tenant", entityId: tenant.id, summary: `Created client ${tenant.name}`, metadata: { slug: tenant.slug, domain: primaryDomain } });
       return NextResponse.json({ success: true, tenant });
     }
@@ -131,8 +171,13 @@ export async function POST(request: Request) {
         notes: textOrNull(body.notes),
       }).select("id,name,slug").single();
       if (error) throw error;
+      const appCompanyId = await provisionUnifiedCompany(db, tenantId, data);
+      if (appCompanyId) {
+        const { error: linkError } = await db.from("platform_companies").update({ app_company_id: appCompanyId, database_status: "ready", status: "active", updated_at: new Date().toISOString() }).eq("id", data.id);
+        if (linkError) throw new Error(`Company was provisioned but Control could not link it. Apply the Control entitlement migration. ${linkError.message}`);
+      }
       await writePlatformAudit(db, admin, request, { action, entityType: "company", entityId: data.id, summary: `Added company ${data.name}`, metadata: { tenantId, slug: data.slug } });
-      return NextResponse.json({ success: true, company: data });
+      return NextResponse.json({ success: true, company: { ...data, app_company_id: appCompanyId } });
     }
 
     if (action === "updateCompany") {
@@ -175,6 +220,12 @@ export async function POST(request: Request) {
       };
       const { error } = await db.from("platform_subscriptions").upsert(record, { onConflict: "tenant_id" });
       if (error) throw error;
+      const requestedFeatures = body.features && typeof body.features === "object" ? body.features as Record<string, unknown> : {};
+      const { error: entitlementError } = await db.from("platform_entitlements").upsert(
+        featureKeys.map((featureKey) => ({ tenant_id: tenantId, feature_key: featureKey, enabled: Boolean(requestedFeatures[featureKey]), updated_at: new Date().toISOString() })),
+        { onConflict: "tenant_id,feature_key" },
+      );
+      if (entitlementError) throw new Error(`Feature controls could not be saved. Apply the Control entitlement migration first. ${entitlementError.message}`);
       await writePlatformAudit(db, admin, request, { action, entityType: "subscription", entityId: tenantId, summary: `Updated ${record.plan_name} subscription`, metadata: { status, expiresOn: record.expires_on } });
       return NextResponse.json({ success: true });
     }

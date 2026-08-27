@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { getCurrentParty } from "../../../lib/current-party";
+import { requireFeature } from "../../../lib/feature-access";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ type LedgerRow = {
 type SubmittedOrderLine = { productId?: unknown; quantity?: unknown };
 
 async function clientSnapshot(requestedFiscalYearId?: string) {
+  await requireFeature("customer_portal");
   const db = getSupabaseAdmin();
   if (!db) throw new Error("Database configuration is missing");
   const party = await getCurrentParty(db);
@@ -53,6 +55,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireFeature("customer_portal");
     const db = getSupabaseAdmin();
     if (!db) throw new Error("Database configuration is missing");
     const party = await getCurrentParty(db);

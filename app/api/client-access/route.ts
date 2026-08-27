@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { getCurrentMember } from "../../../lib/current-member";
 import { sendClientPasswordEmail } from "../../../lib/client-auth-email";
+import { getSelectedBusinessCompany } from "../../../lib/company-context";
 
 export const dynamic = "force-dynamic";
 
 async function requireAdmin() {
   const db = getSupabaseAdmin();
   if (!db) throw new Error("Database configuration is missing");
-  const member = await getCurrentMember(db);
+  const company = await getSelectedBusinessCompany(db);
+  const member = await getCurrentMember(db, company.id);
   return { db, member, allowed: member?.role === "admin" };
 }
 
@@ -21,6 +23,17 @@ async function partySnapshot(db: NonNullable<ReturnType<typeof getSupabaseAdmin>
     return { ...party, auth_exists: !authError && Boolean(auth.user), email_confirmed: Boolean(auth.user?.email_confirmed_at), last_sign_in_at: auth.user?.last_sign_in_at || null };
   }));
   return parties;
+}
+
+async function authUserByEmail(db: NonNullable<ReturnType<typeof getSupabaseAdmin>>, email: string) {
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) throw error;
+    const match = data.users.find((candidate) => candidate.email?.toLowerCase() === email);
+    if (match) return match;
+    if (data.users.length < 100) break;
+  }
+  return null;
 }
 
 export async function GET() {
@@ -51,10 +64,16 @@ export async function POST(request: Request) {
       if (party.auth_user_id) return NextResponse.json({ error: "This party already has a portal login. Use Set password instead." }, { status: 400 });
       const { data: emailOwner } = await db.from("parties").select("id,name").eq("company_id", member!.company_id).ilike("portal_email", email).not("auth_user_id", "is", null).maybeSingle();
       if (emailOwner) return NextResponse.json({ error: `This email is already used by ${emailOwner.name}` }, { status: 409 });
-      const { data: auth, error: authError } = await db.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name: party.name, account_type: "customer" } });
-      if (authError) throw new Error(authError.message.includes("already") ? "This email already exists in authentication. Use a different customer email or contact the administrator." : authError.message);
-      const { error: updateError } = await db.from("parties").update({ auth_user_id: auth.user.id, portal_email: email, portal_active: true }).eq("id", party.id);
-      if (updateError) { await db.auth.admin.deleteUser(auth.user.id); throw updateError; }
+      let authUser = await authUserByEmail(db, email);
+      let createdAuth = false;
+      if (!authUser) {
+        const { data: auth, error: authError } = await db.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name: party.name } });
+        if (authError) throw authError;
+        authUser = auth.user;
+        createdAuth = true;
+      }
+      const { error: updateError } = await db.from("parties").update({ auth_user_id: authUser.id, portal_email: email, portal_active: true }).eq("id", party.id).eq("company_id", member!.company_id);
+      if (updateError) { if (createdAuth) await db.auth.admin.deleteUser(authUser.id); throw updateError; }
       if (body.sendEmail !== false) {
         try { await sendClientPasswordEmail(db, { email, name: party.name }); }
         catch (emailError) { console.error("Customer setup email failed", emailError); warning = "Login was created and the initial password works, but the setup email could not be delivered."; }

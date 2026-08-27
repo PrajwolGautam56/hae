@@ -2,15 +2,15 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { adToBsParts, bsMonths } from "../../../lib/nepali-date";
 import { getCurrentMember } from "../../../lib/current-member";
+import { getSelectedBusinessCompany } from "../../../lib/company-context";
+import { requireFeature } from "../../../lib/feature-access";
 export const dynamic = "force-dynamic";
 
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 async function accountingContext(requestedFy?:string){
   const supabase=getSupabaseAdmin();if(!supabase)throw new Error("Supabase server configuration is missing");
-  const {data:companies,error:companyError}=await supabase.from("companies").select("id,name,currency,fiscal_year").order("created_at").limit(1);
-  if(companyError||!companies?.[0])throw companyError||new Error("Company not found");
-  const company=companies[0];
+  const company=await getSelectedBusinessCompany(supabase);
   let {data:fiscalYears,error:fyError}=await supabase.from("fiscal_years").select("*").eq("company_id",company.id).order("start_ad",{ascending:false});
   if(fyError)throw fyError;const today=businessDate();let fiscalYear=requestedFy?fiscalYears?.find(f=>f.id===requestedFy):fiscalYears?.find(f=>f.start_ad<=today&&f.end_ad>=today);
   if(!fiscalYear&&!requestedFy){const {error}=await supabase.rpc("ensure_fiscal_year_for_date",{p_company_id:company.id,p_date:today});if(error)throw error;const refreshed=await supabase.from("fiscal_years").select("*").eq("company_id",company.id).order("start_ad",{ascending:false});if(refreshed.error)throw refreshed.error;fiscalYears=refreshed.data;fiscalYear=fiscalYears?.find(f=>f.start_ad<=today&&f.end_ad>=today)}
@@ -77,7 +77,7 @@ async function snapshot(requestedFy?: string) {
   ]);
   if (partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError || memberError || moneyAccountError)
     throw partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError || memberError || moneyAccountError;
-  const currentMember = await getCurrentMember(supabase);
+  const currentMember = await getCurrentMember(supabase, company.id);
   const productRows = (products || []).map((row:any) => ({ ...row, item_type: row.item_type || "finished_good" }));
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
@@ -184,16 +184,19 @@ async function snapshot(requestedFy?: string) {
 
 export async function GET(request: Request) {
   try {
+    await requireFeature("accounting");
     const voucherId = new URL(request.url).searchParams.get("voucherId");
     if (voucherId) {
       const supabase = getSupabaseAdmin();
       if (!supabase) throw new Error("Supabase server configuration is missing");
-      const currentMember = await getCurrentMember(supabase);
+      const selectedCompany = await getSelectedBusinessCompany(supabase);
+      const currentMember = await getCurrentMember(supabase, selectedCompany.id);
       if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
         .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties(name,place,phone,tax_no),fiscal_years(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts(name,account_type)")
         .eq("id", voucherId)
+        .eq("company_id", selectedCompany.id)
         .single();
       if (voucherError) throw voucherError;
       const { data: lines, error: lineError } = await supabase
@@ -217,13 +220,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await requireFeature("accounting");
     const supabase = getSupabaseAdmin();
     if (!supabase) throw new Error("Supabase server configuration is missing");
-    const currentMember = await getCurrentMember(supabase);
-    if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
     const body = (await request.json()) as Record<string, unknown>;
     const type = String(body.type || "");
     const initialState = await accountingContext(String(body.fiscalYearId || ""));
+    const currentMember = await getCurrentMember(supabase, initialState.company.id);
+    if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
     if (type === "party") {
       const name = String(body.partyName || "").trim();
       if (!name)
@@ -430,9 +434,10 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    await requireFeature("accounting");
     const supabase=getSupabaseAdmin();if(!supabase)throw new Error("Supabase server configuration is missing");
-    const currentMember=await getCurrentMember(supabase);if(!currentMember)return NextResponse.json({error:"Active team access is required"},{status:401});
     const body=await request.json();
+    const selectedCompany=await getSelectedBusinessCompany(supabase);const currentMember=await getCurrentMember(supabase,selectedCompany.id);if(!currentMember)return NextResponse.json({error:"Active team access is required"},{status:401});
     const productId=String(body.productId||"");
     if(productId){
       const state=await accountingContext(String(body.fiscalYearId||""));

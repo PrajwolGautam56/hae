@@ -60,6 +60,12 @@ type Audit = {
   summary: string;
   created_at: string;
 };
+type Entitlement = {
+  tenant_id: string;
+  feature_key: string;
+  enabled: boolean;
+  limits?: Record<string, unknown>;
+};
 type Payload = {
   viewer: { id: string; name: string; email: string; role: string };
   tenants: Tenant[];
@@ -67,6 +73,8 @@ type Payload = {
   subscriptions: Subscription[];
   administrators: Administrator[];
   audits: Audit[];
+  entitlements: Entitlement[];
+  entitlementMigrationRequired?: boolean;
   rootDomain: string;
 };
 type Modal = {
@@ -81,6 +89,15 @@ const nav = [
   ["companies", "Companies", "▦"],
   ["team", "Platform team", "◎"],
   ["activity", "Audit log", "≋"],
+] as const;
+
+const featureOptions = [
+  ["accounting", "Accounting & ledger"], ["sales", "Sales invoices"],
+  ["purchases", "Purchases"], ["inventory", "Inventory & stock"],
+  ["manufacturing", "Manufacturing"], ["crm", "Lead management"],
+  ["tasks", "Tasks & follow-ups"], ["orders", "Customer orders"],
+  ["customer_portal", "Customer portal"], ["cash_bank", "Cash & bank"],
+  ["cheques", "Cheque management"], ["reports", "Reports & exports"],
 ] as const;
 
 function Field({
@@ -536,8 +553,8 @@ export default function PlatformAdminPage() {
                   <small>DATABASE REGISTRY</small>
                   <h2>Company environments</h2>
                   <p>
-                    Login stays disabled until the dedicated database is
-                    connected and marked ready.
+                    Every company is isolated by company ID inside the shared
+                    SaaS database. Login stays disabled until onboarding is ready.
                   </p>
                 </div>
               </div>
@@ -1007,10 +1024,12 @@ function Editor({
           className="pc-modal"
           onSubmit={(event) => {
             const form = values(event);
+            const formData = new FormData(event.currentTarget);
             void submit({
               action: "updateSubscription",
               tenantId: tenant?.id,
               ...form,
+              features: Object.fromEntries(featureOptions.map(([key]) => [key, formData.get(`feature_${key}`) === "on"])),
             });
           }}
         >
@@ -1081,6 +1100,22 @@ function Editor({
             <Field label="Notes" wide>
               <textarea name="notes" defaultValue={subscription?.notes || ""} />
             </Field>
+            <div className="wide">
+              <span className="pc-field-label">Enabled modules</span>
+              <div className="pc-feature-grid">
+                {featureOptions.map(([key, label]) => (
+                  <label className="pc-check" key={key}>
+                    <input
+                      name={`feature_${key}`}
+                      type="checkbox"
+                      defaultChecked={data.entitlements.some((item) => item.tenant_id === tenant?.id && item.feature_key === key && item.enabled)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {data.entitlementMigrationRequired && <small>Apply the Control entitlement migration before saving module access.</small>}
+            </div>
           </div>
           <ModalActions busy={busy} close={close} label="Save subscription" />
         </form>

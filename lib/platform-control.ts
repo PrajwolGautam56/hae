@@ -4,6 +4,7 @@ export const COMPANY_COOKIE = "hae_company";
 
 export type PlatformCompany = {
   id: string;
+  appCompanyId: string | null;
   slug: string;
   name: string;
   connectionKey: string | null;
@@ -14,7 +15,14 @@ export type PlatformCompany = {
 export type TenantCompanies = {
   tenant: { id: string; slug: string; name: string; domain: string };
   companies: PlatformCompany[];
+  subscription: { planName: string; status: string; companyLimit: number; userLimit: number; expiresOn: string | null } | null;
+  entitlements: Record<string, boolean>;
 };
+
+export const DEFAULT_ENTITLEMENTS = [
+  "accounting", "sales", "purchases", "inventory", "manufacturing", "crm",
+  "tasks", "orders", "customer_portal", "cash_bank", "cheques", "reports",
+] as const;
 
 const fallback: TenantCompanies = {
   tenant: {
@@ -26,6 +34,7 @@ const fallback: TenantCompanies = {
   companies: [
     {
       id: "20000000-0000-4000-8000-000000000001",
+      appCompanyId: null,
       slug: "hamro-afno",
       name: "Hamro Aafno Enterprises",
       connectionKey: "HAE",
@@ -34,6 +43,7 @@ const fallback: TenantCompanies = {
     },
     {
       id: "20000000-0000-4000-8000-000000000002",
+      appCompanyId: null,
       slug: "ag-manufacturing",
       name: "A.G. Manufacturing & Trading",
       connectionKey: "AG",
@@ -41,6 +51,13 @@ const fallback: TenantCompanies = {
       loginEnabled: false,
     },
   ],
+  subscription: { planName: "Internal", status: "active", companyLimit: 5, userLimit: 50, expiresOn: null },
+  entitlements: Object.fromEntries(DEFAULT_ENTITLEMENTS.map((feature) => [feature, true])),
+};
+const registryCache = new Map<string, { expires: number; value: TenantCompanies | null }>();
+const rememberRegistry = (slug: string, value: TenantCompanies | null) => {
+  registryCache.set(slug, { value, expires: Date.now() + 15_000 });
+  return value;
 };
 
 function cleanHost(rawHost?: string | null) {
@@ -72,6 +89,8 @@ export function getControlAdmin() {
 
 export async function companiesForHost(rawHost?: string | null): Promise<TenantCompanies | null> {
   const slug = tenantSlugForHost(rawHost);
+  const cached = registryCache.get(slug);
+  if (cached && cached.expires > Date.now()) return cached.value;
   const control = getControlAdmin();
   if (control) {
     const { data: tenant } = await control
@@ -81,36 +100,66 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
       .eq("active", true)
       .maybeSingle();
     if (tenant) {
-      const { data: companies } = await control
+      let companiesResult: { data: Array<Record<string, unknown>> | null; error: { message: string } | null } = await control
         .from("platform_companies")
-        .select("id,slug,name,connection_key,status,login_enabled")
+        .select("id,app_company_id,slug,name,connection_key,status,login_enabled")
         .eq("tenant_id", tenant.id)
         .order("sort_order")
         .order("name");
-      if (companies) return {
+      if (companiesResult.error && /app_company_id.*(does not exist|schema cache)/i.test(companiesResult.error.message)) {
+        companiesResult = await control
+          .from("platform_companies")
+          .select("id,slug,name,connection_key,status,login_enabled")
+          .eq("tenant_id", tenant.id)
+          .order("sort_order")
+          .order("name");
+      }
+      const [{ data: subscription }, { data: entitlementRows }] = await Promise.all([
+        control.from("platform_subscriptions").select("plan_name,status,company_limit,user_limit,expires_on").eq("tenant_id", tenant.id).maybeSingle(),
+        control.from("platform_entitlements").select("feature_key,enabled").eq("tenant_id", tenant.id),
+      ]);
+      const companies = companiesResult.data;
+      if (companies) return rememberRegistry(slug, {
         tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, domain: tenant.primary_domain },
         companies: companies.map((company) => ({
-          id: company.id,
-          slug: company.slug,
-          name: company.name,
-          connectionKey: company.connection_key,
+          id: String(company.id),
+          appCompanyId: "app_company_id" in company ? String(company.app_company_id || "") || null : null,
+          slug: String(company.slug),
+          name: String(company.name),
+          connectionKey: company.connection_key ? String(company.connection_key) : null,
           status: company.status as PlatformCompany["status"],
-          loginEnabled: company.login_enabled,
+          loginEnabled: Boolean(company.login_enabled),
         })),
-      };
+        subscription: subscription ? {
+          planName: subscription.plan_name,
+          status: subscription.status,
+          companyLimit: subscription.company_limit,
+          userLimit: subscription.user_limit,
+          expiresOn: subscription.expires_on,
+        } : null,
+        entitlements: entitlementRows?.length
+          ? Object.fromEntries(entitlementRows.map((row) => [row.feature_key, row.enabled]))
+          : Object.fromEntries(DEFAULT_ENTITLEMENTS.map((feature) => [feature, tenant.slug === "hamro" || ["accounting", "sales", "purchases", "inventory", "reports"].includes(feature)])),
+      });
     }
   }
-  return slug === fallback.tenant.slug ? fallback : null;
+  return rememberRegistry(slug, slug === fallback.tenant.slug ? fallback : null);
 }
 
 export async function loginCompany(rawHost: string | null, companySlug: string) {
   const registry = await companiesForHost(rawHost);
   const company = registry?.companies.find((item) => item.slug === companySlug);
   if (!registry || !company) return null;
-  return { tenant: registry.tenant, company };
+  return { tenant: registry.tenant, company, subscription: registry.subscription, entitlements: registry.entitlements };
 }
 
 export function businessAuthConfig(connectionKey: string | null) {
+  const unifiedUrl = process.env.UNIFIED_SUPABASE_URL;
+  const unifiedPublishableKey = process.env.UNIFIED_SUPABASE_PUBLISHABLE_KEY;
+  const unifiedSecretKey = process.env.UNIFIED_SUPABASE_SECRET_KEY;
+  if (unifiedUrl && unifiedPublishableKey && unifiedSecretKey) {
+    return { url: unifiedUrl, publishableKey: unifiedPublishableKey, secretKey: unifiedSecretKey };
+  }
   if (connectionKey === "HAE") {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;

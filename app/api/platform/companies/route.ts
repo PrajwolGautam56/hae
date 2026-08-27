@@ -10,6 +10,8 @@ export async function GET(request: Request) {
   const response = NextResponse.json({
     tenant: registry.tenant,
     companies: registry.companies.map((company) => ({ id: company.id, slug: company.slug, name: company.name, status: company.status, loginEnabled: company.loginEnabled })),
+    subscription: registry.subscription,
+    entitlements: registry.entitlements,
   });
   response.headers.set("Cache-Control", "no-store");
   return response;

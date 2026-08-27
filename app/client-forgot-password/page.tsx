@@ -9,7 +9,8 @@ export default function ClientForgotPassword() {
   async function send() {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/client/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const companySlug = new URLSearchParams(window.location.search).get("company");
+      const response = await fetch("/api/client/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, companySlug }) });
       const data = await response.json();
       setMessage(data.message || data.error || "Check your email for the secure password link.");
     } catch { setMessage("Could not request a password link. Please try again."); }

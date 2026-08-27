@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { getCurrentMember } from "../../../lib/current-member";
+import { getSelectedBusinessCompany } from "../../../lib/company-context";
+import { requireFeature } from "../../../lib/feature-access";
 
 export const dynamic = "force-dynamic";
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 async function context(requestedFy?: string) {
+  await requireFeature("cash_bank");
   const db = getSupabaseAdmin();
   if (!db) throw new Error("Supabase server configuration is missing");
-  const [{ data: company, error: companyError }, member] = await Promise.all([
-    db.from("companies").select("id,name").order("created_at").limit(1).single(),
-    getCurrentMember(db),
-  ]);
-  if (companyError || !company) throw companyError || new Error("Company not found");
-  if (!member || member.company_id !== company.id) throw new Error("Active team access is required");
+  const company = await getSelectedBusinessCompany(db);
+  const member = await getCurrentMember(db, company.id);
+  if (!member) throw new Error("Active team access is required");
   const { data: years, error: yearError } = await db.from("fiscal_years").select("id,label_bs,start_ad,end_ad,status").eq("company_id", company.id).order("start_ad", { ascending: false });
   if (yearError) throw yearError;
   const today = businessDate();

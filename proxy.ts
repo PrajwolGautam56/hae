@@ -11,6 +11,10 @@ const PLATFORM_REFRESH_COOKIE = "kritech_platform_refresh";
 type BusinessConfig = { url: string; key: string; secret: string };
 
 function businessConfig(companySlug: string | undefined): BusinessConfig | null {
+  const unifiedUrl = process.env.UNIFIED_SUPABASE_URL;
+  const unifiedKey = process.env.UNIFIED_SUPABASE_PUBLISHABLE_KEY;
+  const unifiedSecret = process.env.UNIFIED_SUPABASE_SECRET_KEY;
+  if (companySlug && unifiedUrl && unifiedKey && unifiedSecret) return { url: unifiedUrl, key: unifiedKey, secret: unifiedSecret };
   if (companySlug === "hamro-afno") {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -37,12 +41,21 @@ function matches(path: string, entries: string[]) {
   return entries.some((entry) => path === entry || path.startsWith(`${entry}/`));
 }
 
-async function lookupIdentity(token: string, table: "team_members" | "parties", activeColumn: "active" | "portal_active", config: BusinessConfig) {
+async function lookupIdentity(token: string, table: "team_members" | "parties", activeColumn: "active" | "portal_active", config: BusinessConfig, companySlug?: string) {
   const validation = await fetch(`${config.url}/auth/v1/user`, { headers: { apikey: config.key, Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!validation.ok) return false;
   const user = await validation.json() as { id?: string };
   if (!user.id) return false;
-  const identity = await fetch(`${config.url}/rest/v1/${table}?auth_user_id=eq.${encodeURIComponent(user.id)}&${activeColumn}=eq.true&select=id&limit=1`, {
+  let companyFilter = "";
+  if (companySlug) {
+    const companyResponse = await fetch(`${config.url}/rest/v1/companies?slug=eq.${encodeURIComponent(companySlug)}&active=eq.true&select=id&limit=1`, { headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` }, cache: "no-store" });
+    if (companyResponse.ok) {
+      const companies = await companyResponse.json() as Array<{ id: string }>;
+      if (!companies[0]?.id) return false;
+      companyFilter = `&company_id=eq.${encodeURIComponent(companies[0].id)}`;
+    } else if (process.env.UNIFIED_SUPABASE_URL || companySlug !== "hamro-afno") return false;
+  }
+  const identity = await fetch(`${config.url}/rest/v1/${table}?auth_user_id=eq.${encodeURIComponent(user.id)}&${activeColumn}=eq.true${companyFilter}&select=id&limit=1`, {
     headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` },
     cache: "no-store",
   });
@@ -149,14 +162,15 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isClientPath) {
-    const clientConfig = businessConfig("hamro-afno");
+    const selectedCompany = request.cookies.get(COMPANY_COOKIE)?.value;
+    const clientConfig = businessConfig(selectedCompany);
     if (!clientConfig) return NextResponse.json({ error: "Customer portal configuration is missing" }, { status: 503 });
     const token = request.cookies.get("hae_party_access_token")?.value;
-    if (token && await lookupIdentity(token, "parties", "portal_active", clientConfig)) return NextResponse.next();
+    if (token && await lookupIdentity(token, "parties", "portal_active", clientConfig, selectedCompany)) return NextResponse.next();
     const refreshToken = request.cookies.get("hae_party_refresh_token")?.value;
     if (refreshToken) {
       const session = await refreshSession(refreshToken, clientConfig);
-      if (session && await lookupIdentity(session.access_token, "parties", "portal_active", clientConfig)) return continueWithClientSession(request, session);
+      if (session && await lookupIdentity(session.access_token, "parties", "portal_active", clientConfig, selectedCompany)) return continueWithClientSession(request, session);
     }
     if (path.startsWith("/api/")) return clearClientSession(NextResponse.json({ error: "Customer sign-in required" }, { status: 401 }));
     const login = new URL("/client-login", request.url);
@@ -166,7 +180,7 @@ export async function proxy(request: NextRequest) {
   const selectedCompany = request.cookies.get(COMPANY_COOKIE)?.value;
   const selectedConfig = businessConfig(selectedCompany);
   const token = request.cookies.get("hae_access_token")?.value;
-  if (selectedConfig && token && await lookupIdentity(token, "team_members", "active", selectedConfig)) return NextResponse.next();
+  if (selectedConfig && token && await lookupIdentity(token, "team_members", "active", selectedConfig, selectedCompany)) return NextResponse.next();
   if (path.startsWith("/api/")) return clearStaffSession(NextResponse.json({ error: "Authentication required" }, { status: 401 }));
   const login = new URL("/login", request.url);
   login.searchParams.set("next", `${path}${request.nextUrl.search}`);

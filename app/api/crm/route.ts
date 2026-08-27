@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { sendTeamEmail } from "../../../lib/resend-email";
 import { NEPAL_PROVINCES, provinceForDistrict } from "../../../lib/nepal-address";
+import { getBusinessContext } from "../../../lib/company-context";
+import { requireFeature } from "../../../lib/feature-access";
 
 export const dynamic = "force-dynamic";
 
 async function getCompany(supabase: NonNullable<ReturnType<typeof getSupabaseAdmin>>) {
-  const { data, error } = await supabase.from("companies").select("id,name").order("created_at").limit(1).single();
-  if (error) throw error;
-  return data;
+  return (await getBusinessContext(supabase)).company;
 }
 
 function cleanOptional(value: unknown) {
@@ -64,12 +64,13 @@ async function notifyMember(
 }
 
 export async function GET() {
-  try { return NextResponse.json(await snapshot()); }
+  try { await requireFeature("crm"); return NextResponse.json(await snapshot()); }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "CRM database error" }, { status: 500 }); }
 }
 
 export async function POST(request: Request) {
   try {
+    await requireFeature("crm");
     const supabase = getSupabaseAdmin();
     if (!supabase) throw new Error("Supabase server configuration is missing");
     const body = await request.json();

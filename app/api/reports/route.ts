@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
+import { getBusinessContext } from "../../../lib/company-context";
+import { requireFeature } from "../../../lib/feature-access";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
+    await requireFeature("reports");
     const db = getSupabaseAdmin();
     if (!db) throw new Error("Supabase server configuration is missing");
     const q = new URL(request.url).searchParams;
@@ -15,9 +18,7 @@ export async function GET(request: Request) {
     const from = q.get("from");
     const to = q.get("to");
 
-    const { data: companies, error: companyError } = await db.from("companies").select("id,name").order("created_at").limit(1);
-    if (companyError || !companies?.[0]) throw companyError || new Error("Company not found");
-    const company = companies[0];
+    const { company } = await getBusinessContext(db);
     let fyQuery = db.from("fiscal_years").select("*").eq("company_id", company.id);
     if (fiscalYearId) fyQuery = fyQuery.eq("id", fiscalYearId);
     const { data: years, error: fyError } = await fyQuery.order("start_ad", { ascending: false }).limit(1);
