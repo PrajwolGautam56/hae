@@ -12,7 +12,8 @@ type EmailInput = {
 export async function sendTeamEmail(input: EmailInput) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey || !input.to) return { skipped: true, reason: "Email configuration is missing" };
-  const from = process.env.RESEND_FROM_EMAIL || "Hamro Khata <onboarding@resend.dev>";
+  const from = normalizeEmailSender(process.env.RESEND_FROM_EMAIL)
+    || "Kritech Global <notifications@kritechglobal.com>";
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3010";
   const actionUrl = input.actionUrl || appUrl;
   const response = await fetch("https://api.resend.com/emails", {
@@ -28,6 +29,18 @@ export async function sendTeamEmail(input: EmailInput) {
   const result = await response.json();
   if (!response.ok) throw new Error(result?.message || "Resend could not send email");
   return { skipped: false, id: result.id };
+}
+
+export function normalizeEmailSender(rawValue?: string) {
+  let value = String(rawValue || "").trim().replace(/^RESEND_FROM_EMAIL\s*=\s*/i, "").trim();
+  while (
+    value.length >= 2
+    && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))
+  ) value = value.slice(1, -1).trim();
+
+  const email = "[^\\s<>@]+@[^\\s<>@]+\\.[^\\s<>@]+";
+  if (new RegExp(`^${email}$`).test(value) || new RegExp(`^.+\\s<${email}>$`).test(value)) return value;
+  return "";
 }
 
 function escapeHtml(value: string) {
