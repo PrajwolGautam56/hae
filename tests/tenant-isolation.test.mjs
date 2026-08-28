@@ -46,3 +46,17 @@ test("company administrators cannot overwrite shared customer passwords", async 
   assert.doesNotMatch(route, /auth\.admin\.updateUserById\(party\.auth_user_id/);
   assert.match(route, /cannot overwrite a shared login password/);
 });
+
+test("platform onboarding provisions and scopes company users", async () => {
+  const route = await source("app/api/platform/admin/route.ts");
+  const page = await source("app/platform-admin/page.tsx");
+  assert.match(route, /action === "provisionCompany"/);
+  assert.match(route, /action === "createCompanyUser"/);
+  assert.match(route, /eq\("company_id", platformCompany\.app_company_id\)/);
+  assert.match(route, /eq\("organization_id", platformCompany\.tenant_id\)/);
+  assert.match(route, /subscription has used all/);
+  assert.match(route, /Every company must keep at least one active administrator/);
+  assert.match(page, /Add first company administrator/);
+  assert.match(page, /Shared DB · company isolated/);
+  assert.doesNotMatch(page, /Supabase project ref/);
+});

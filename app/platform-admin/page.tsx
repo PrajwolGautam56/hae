@@ -21,17 +21,27 @@ type Tenant = {
 type Company = {
   id: string;
   tenant_id: string;
+  app_company_id: string | null;
   slug: string;
   name: string;
   legal_name: string | null;
   connection_key: string | null;
   status: string;
   login_enabled: boolean;
-  project_ref: string | null;
-  region: string | null;
   database_status: string;
   portal_enabled: boolean;
   notes: string | null;
+};
+type CompanyUser = {
+  id: string;
+  company_id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: string;
+  active: boolean;
+  auth_user_id: string | null;
+  created_at: string;
 };
 type Subscription = {
   tenant_id: string;
@@ -74,11 +84,14 @@ type Payload = {
   administrators: Administrator[];
   audits: Audit[];
   entitlements: Entitlement[];
+  companyUsers: CompanyUser[];
+  unifiedReady: boolean;
+  unifiedError?: string;
   entitlementMigrationRequired?: boolean;
   rootDomain: string;
 };
 type Modal = {
-  type: "tenant" | "company" | "subscription" | "admin";
+  type: "tenant" | "company" | "companyUser" | "subscription" | "admin";
   tenant?: Tenant;
   company?: Company;
 } | null;
@@ -207,7 +220,7 @@ export default function PlatformAdminPage() {
       data?.companies.filter(
         (item) =>
           !query ||
-          `${item.name} ${item.slug} ${item.project_ref || ""}`
+          `${item.name} ${item.slug}`
             .toLowerCase()
             .includes(query),
       ) || [],
@@ -312,6 +325,11 @@ export default function PlatformAdminPage() {
               <button onClick={() => setNotice("")}>×</button>
             </div>
           )}
+          {!data.unifiedReady && (
+            <div className="pc-alert error">
+              Shared company database is not ready: {data.unifiedError || "configure the UNIFIED_SUPABASE server variables"}. Company and user provisioning is paused.
+            </div>
+          )}
           {tab === "overview" && (
             <>
               <section className="pc-welcome">
@@ -319,8 +337,8 @@ export default function PlatformAdminPage() {
                   <span>KRITECH PLATFORM</span>
                   <h1>Good to see you, {data.viewer.name.split(" ")[0]}.</h1>
                   <p>
-                    One secure view of every client workspace, company database
-                    and subscription.
+                    Onboard clients, provision isolated companies, invite their
+                    first administrators and control subscriptions from one place.
                   </p>
                 </div>
                 {canEdit && (
@@ -341,12 +359,12 @@ export default function PlatformAdminPage() {
                 <article>
                   <span>Ready companies</span>
                   <strong>{readyCompanies}</strong>
-                  <small>{data.companies.length} registered</small>
+                  <small>{data.companies.length} tenant-isolated workspaces</small>
                 </article>
                 <article>
                   <span>Setup queue</span>
                   <strong>{pending}</strong>
-                  <small>Needs database or domain</small>
+                  <small>Needs provisioning, admin or domain</small>
                 </article>
                 <article>
                   <span>Renewal attention</span>
@@ -390,7 +408,7 @@ export default function PlatformAdminPage() {
                             <small>{tenant.primary_domain}</small>
                           </span>
                           <em>
-                            {ready}/{owned.length} DB ready
+                            {ready}/{owned.length} provisioned
                           </em>
                           <Status value={tenant.status} />
                         </button>
@@ -551,10 +569,10 @@ export default function PlatformAdminPage() {
               <div className="pc-panel-head">
                 <div>
                   <small>DATABASE REGISTRY</small>
-                  <h2>Company environments</h2>
+                  <h2>Company onboarding</h2>
                   <p>
-                    Every company is isolated by company ID inside the shared
-                    SaaS database. Login stays disabled until onboarding is ready.
+                    Provision a tenant-isolated workspace, add the first company
+                    administrator, then activate staff login.
                   </p>
                 </div>
               </div>
@@ -562,7 +580,7 @@ export default function PlatformAdminPage() {
                 <div>
                   ⌕
                   <input
-                    placeholder="Search company or project ref"
+                    placeholder="Search company or client"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                   />
@@ -575,8 +593,8 @@ export default function PlatformAdminPage() {
                     <tr>
                       <th>Company</th>
                       <th>Client</th>
-                      <th>Database</th>
-                      <th>Project / region</th>
+                      <th>Data workspace</th>
+                      <th>Company users</th>
                       <th>Staff login</th>
                       <th>Status</th>
                       <th />
@@ -595,13 +613,11 @@ export default function PlatformAdminPage() {
                           </td>
                           <td>{tenant?.name || "—"}</td>
                           <td>
-                            <Status value={company.database_status} />
+                            {company.app_company_id ? <><Status value="ready" /><small>Shared DB · company isolated</small></> : <><Status value="pending" /><small>Provisioning required</small></>}
                           </td>
                           <td>
-                            <strong>
-                              {company.project_ref || "Not connected"}
-                            </strong>
-                            <small>{company.region || "Region pending"}</small>
+                            <strong>{data.companyUsers.filter((user) => user.company_id === company.app_company_id && user.active).length}</strong>
+                            <small>active seats</small>
                           </td>
                           <td>
                             <span
@@ -615,13 +631,10 @@ export default function PlatformAdminPage() {
                           </td>
                           <td>
                           {canEdit && (
-                            <button
-                              onClick={() =>
-                                setModal({ type: "company", tenant, company })
-                              }
-                            >
-                              Manage
-                            </button>
+                            <div className="pc-row-actions">
+                              {!company.app_company_id ? <button disabled={busy || !data.unifiedReady} onClick={() => action({ action: "provisionCompany", companyId: company.id })}>Provision</button> : <button onClick={() => setModal({ type: "companyUser", tenant, company })}>Users</button>}
+                              <button onClick={() => setModal({ type: "company", tenant, company })}>Manage</button>
+                            </div>
                           )}
                           </td>
                         </tr>
@@ -943,15 +956,12 @@ function Editor({
                 defaultValue={company?.legal_name || ""}
               />
             </Field>
-            <Field label="Connection key">
-              <input
-                name="connectionKey"
-                defaultValue={company?.connection_key || ""}
-                placeholder="CLIENT01"
-              />
-            </Field>
             {company && (
               <>
+                <div className="pc-workspace-summary wide">
+                  <span className={company.app_company_id ? "ready" : "pending"}>{company.app_company_id ? "✓" : "!"}</span>
+                  <div><strong>{company.app_company_id ? "Tenant-isolated workspace provisioned" : "Workspace provisioning required"}</strong><small>{company.app_company_id ? "This company uses the shared Supabase database with company-level isolation." : "Provision the workspace from the Companies screen before adding users."}</small></div>
+                </div>
                 <Field label="Company status">
                   <select name="status" defaultValue={company.status}>
                     <option value="pending">Pending</option>
@@ -959,38 +969,15 @@ function Editor({
                     <option value="disabled">Disabled</option>
                   </select>
                 </Field>
-                <Field label="Database status">
-                  <select
-                    name="databaseStatus"
-                    defaultValue={company.database_status}
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="connecting">Connecting</option>
-                    <option value="ready">Ready</option>
-                    <option value="error">Error</option>
-                  </select>
-                </Field>
-                <Field label="Supabase project ref">
-                  <input
-                    name="projectRef"
-                    defaultValue={company.project_ref || ""}
-                  />
-                </Field>
-                <Field label="Region">
-                  <input
-                    name="region"
-                    defaultValue={company.region || ""}
-                    placeholder="ap-south-1"
-                  />
-                </Field>
                 <Field label="Staff login">
                   <span className="pc-check">
                     <input
                       name="loginEnabled"
                       type="checkbox"
+                      disabled={!company.app_company_id || !data.companyUsers.some((user) => user.company_id === company.app_company_id && user.role === "admin" && user.active)}
                       defaultChecked={company.login_enabled}
                     />{" "}
-                    Enable when active and DB ready
+                    Enable after first company admin is active
                   </span>
                 </Field>
                 <Field label="Customer portal">
@@ -1017,6 +1004,46 @@ function Editor({
         </form>
       </div>
     );
+  if (modal.type === "companyUser") {
+    const users = data.companyUsers.filter((user) => user.company_id === company?.app_company_id);
+    const tenantCompanyIds = data.companies.filter((item) => item.tenant_id === tenant?.id).map((item) => item.app_company_id).filter(Boolean);
+    const usedSeats = data.companyUsers.filter((user) => user.active && tenantCompanyIds.includes(user.company_id)).length;
+    const firstUser = users.length === 0;
+    return (
+      <div className="pc-modal-bg" onMouseDown={(event) => event.target === event.currentTarget && close()}>
+        <form className="pc-modal" onSubmit={(event) => {
+          const form = values(event);
+          void submit({ action: "createCompanyUser", companyId: company?.id, ...form });
+        }}>
+          <ModalHead title={firstUser ? "Add first company administrator" : "Company users"} subtitle={`${company?.name || "Company"} · ${usedSeats}/${subscription?.user_limit || 10} tenant seats used`} close={close} />
+          <div className="pc-company-user-body">
+            <section className="pc-existing-users">
+              <div className="pc-section-copy"><strong>Existing access</strong><small>Roles and access are scoped only to this company.</small></div>
+              {users.map((user) => <div key={user.id} className="pc-company-user-row">
+                <span className="pc-avatar">{initials(user.name)}</span>
+                <span><strong>{user.name}</strong><small>{user.email}</small></span>
+                <select value={user.role} disabled={busy} onChange={(event) => void submit({ action: "companyUserStatus", companyId: company?.id, memberId: user.id, role: event.target.value, active: user.active })}>
+                  <option value="admin">Admin</option><option value="manager">Manager</option><option value="accountant">Accountant</option><option value="staff">Staff</option>
+                </select>
+                <button type="button" className={user.active ? "danger" : ""} disabled={busy} onClick={() => void submit({ action: "companyUserStatus", companyId: company?.id, memberId: user.id, role: user.role, active: !user.active })}>{user.active ? "Deactivate" : "Activate"}</button>
+              </div>)}
+              {!users.length && <p className="pc-empty">No company user exists yet. Create the first administrator below.</p>}
+            </section>
+            <section className="pc-user-create">
+              <div className="pc-section-copy"><strong>{firstUser ? "First administrator" : "Add another user"}</strong><small>A one-time password setup link will be emailed to the user.</small></div>
+              <div className="pc-form">
+                <Field label="Full name"><input name="name" required /></Field>
+                <Field label="Email address"><input name="email" type="email" required /></Field>
+                <Field label="Phone (optional)"><input name="phone" /></Field>
+                <Field label="Company role"><select name="role" defaultValue={firstUser ? "admin" : "staff"}><option value="admin">Administrator</option><option value="manager">Manager</option><option value="accountant">Accountant</option><option value="staff">Staff</option></select></Field>
+              </div>
+            </section>
+          </div>
+          <ModalActions busy={busy} close={close} label={firstUser ? "Create admin & send invite" : "Add user & send invite"} />
+        </form>
+      </div>
+    );
+  }
   if (modal.type === "subscription")
     return (
       <div className="pc-modal-bg">
