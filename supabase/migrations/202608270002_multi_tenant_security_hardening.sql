@@ -40,6 +40,7 @@ create unique index if not exists accounts_company_id_id_unique on public.accoun
 create unique index if not exists journal_entries_company_id_id_unique on public.journal_entries(company_id,id);
 create unique index if not exists customer_orders_company_id_id_unique on public.customer_orders(company_id,id);
 create unique index if not exists production_batches_company_id_id_unique on public.production_batches(company_id,id);
+create unique index if not exists work_tasks_company_id_id_unique on public.work_tasks(company_id,id);
 create unique index if not exists platform_companies_tenant_id_id_unique on public.platform_companies(tenant_id,id);
 create unique index if not exists companies_organization_id_id_unique on public.companies(organization_id,id);
 

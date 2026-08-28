@@ -226,7 +226,12 @@ do $$
 declare table_row record;
 begin
   for table_row in
-    select c.table_name from information_schema.columns c
+    select c.table_name
+    from information_schema.columns c
+    join information_schema.tables t
+      on t.table_schema = c.table_schema
+     and t.table_name = c.table_name
+     and t.table_type = 'BASE TABLE'
     where c.table_schema = 'public' and c.column_name = 'company_id'
   loop
     execute format('alter table public.%I enable row level security', table_row.table_name);
