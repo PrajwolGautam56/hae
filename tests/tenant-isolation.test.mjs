@@ -60,3 +60,22 @@ test("platform onboarding provisions and scopes company users", async () => {
   assert.match(page, /Shared DB · company isolated/);
   assert.doesNotMatch(page, /Supabase project ref/);
 });
+
+test("embedded business reads disambiguate tenant-safe foreign keys", async () => {
+  const [accounting, reports, cheques, funds, crm, orders] = await Promise.all([
+    source("app/api/accounting/route.ts"),
+    source("app/api/reports/route.ts"),
+    source("app/api/cheques/route.ts"),
+    source("app/api/funds/route.ts"),
+    source("app/api/crm/route.ts"),
+    source("app/api/orders/route.ts"),
+  ]);
+  assert.match(accounting, /parties!vouchers_company_party_fkey/);
+  assert.match(accounting, /money_accounts!vouchers_company_money_account_fkey/);
+  assert.match(reports, /ledger_entries!ledger_company_voucher_fkey/);
+  assert.match(reports, /journal_entries!journal_line_company_entry_fkey/);
+  assert.match(cheques, /parties!vouchers_company_party_fkey/);
+  assert.match(funds, /parties!movement_company_party_fkey/);
+  assert.match(crm, /team_members!leads_company_assignee_fkey/);
+  assert.match(orders, /parties!orders_company_party_fkey/);
+});

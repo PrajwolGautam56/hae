@@ -38,9 +38,9 @@ async function snapshot() {
   const company = await getCompany(supabase);
   const [members, leads, tasks, activities, parties] = await Promise.all([
     supabase.from("team_members").select("*").eq("company_id", company.id).order("created_at"),
-    supabase.from("leads").select("*,assignee:team_members(name),converted_party:parties(name)").eq("company_id", company.id).order("created_at", { ascending: false }),
-    supabase.from("work_tasks").select("*,assignee:team_members(name),lead:leads(name),party:parties(name)").eq("company_id", company.id).order("due_at", { ascending: true, nullsFirst: false }),
-    supabase.from("crm_activities").select("*,member:team_members(name),lead:leads(name),party:parties(name)").eq("company_id", company.id).order("happened_at", { ascending: false }).limit(200),
+    supabase.from("leads").select("*,assignee:team_members!leads_company_assignee_fkey(name),converted_party:parties!leads_company_converted_party_fkey(name)").eq("company_id", company.id).order("created_at", { ascending: false }),
+    supabase.from("work_tasks").select("*,assignee:team_members!tasks_company_assignee_fkey(name),lead:leads!tasks_company_lead_fkey(name),party:parties!tasks_company_party_fkey(name)").eq("company_id", company.id).order("due_at", { ascending: true, nullsFirst: false }),
+    supabase.from("crm_activities").select("*,member:team_members!activity_company_member_fkey(name),lead:leads!activity_company_lead_fkey(name),party:parties!activity_company_party_fkey(name)").eq("company_id", company.id).order("happened_at", { ascending: false }).limit(200),
     supabase.from("parties").select("id,name,phone,place").eq("company_id", company.id).order("name"),
   ]);
   for (const result of [members, leads, tasks, activities, parties]) if (result.error) throw result.error;

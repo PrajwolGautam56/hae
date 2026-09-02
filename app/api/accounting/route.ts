@@ -44,7 +44,7 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts(name,account_type)",
+        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
@@ -195,7 +195,7 @@ export async function GET(request: Request) {
       if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
-        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties(name,place,phone,tax_no),fiscal_years(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts(name,account_type)")
+        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
         .eq("id", voucherId)
         .eq("company_id", selectedCompany.id)
         .single();

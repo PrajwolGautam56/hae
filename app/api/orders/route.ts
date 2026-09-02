@@ -16,7 +16,7 @@ async function snapshot() {
   const member = await getCurrentMember(db, company.id);
   if (!member) return { unauthorized: true as const };
   const { data: orders, error } = await db.from("customer_orders")
-    .select("id,party_id,order_no,status,notes,total,placed_at,updated_at,delivered_at,delivered_by,party:parties(name,place,phone),customer_order_lines(id,product_id,product_name,unit,quantity,unit_price,amount,product:products(stock_qty)),customer_order_status_history(id,from_status,to_status,changed_by_type,note,created_at)")
+    .select("id,party_id,order_no,status,notes,total,placed_at,updated_at,delivered_at,delivered_by,party:parties!orders_company_party_fkey(name,place,phone),customer_order_lines(id,product_id,product_name,unit,quantity,unit_price,amount,product:products(stock_qty)),customer_order_status_history(id,from_status,to_status,changed_by_type,note,created_at)")
     .eq("company_id",member.company_id).order("placed_at",{ascending:false}).limit(250);
   if (error) throw error;
   const rows=((orders||[]) as unknown as OrderRow[]).map((order)=>({...order,hasShortage:(order.customer_order_lines||[]).some((line)=>Number(line.quantity)>Number(line.product?.stock_qty||0))}));

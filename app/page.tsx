@@ -227,16 +227,16 @@ export default function Home() {
   useEffect(() => {
     try { const cached=sessionStorage.getItem("hae-snapshot-current");if(cached)applySnapshot(JSON.parse(cached)); } catch {}
     const controller=new AbortController();
-    fetch("/api/accounting",{signal:controller.signal})
-      .then((r) => r.json())
+    fetch("/api/accounting",{signal:controller.signal,cache:"no-store"})
+      .then(async(r) => {const data=await r.json();if(!r.ok)throw new Error(data.error||"Database could not be loaded");return data})
       .then(applySnapshot)
-      .catch((error) => {if(error?.name!=="AbortError")setNotice("Database could not be loaded")});
+      .catch((error) => {if(error?.name!=="AbortError")setNotice(error instanceof Error?error.message:"Database could not be loaded")});
     return()=>controller.abort();
   }, []);
   async function changeFiscalYear(id: string) {
     const request = ++fiscalRequest.current;
     try{const cached=sessionStorage.getItem(`hae-snapshot-${id}`);if(cached)applySnapshot(JSON.parse(cached))}catch{}
-    const data = await fetch(`/api/accounting?fy=${id}`).then((r) => r.json());
+    const data = await fetch(`/api/accounting?fy=${id}`,{cache:"no-store"}).then(async(r) => {const body=await r.json();if(!r.ok)throw new Error(body.error||"Database could not be loaded");return body});
     if (request === fiscalRequest.current) {
       applySnapshot(data);
       const inYear = today >= data.fiscalYear.start_ad && today <= data.fiscalYear.end_ad;

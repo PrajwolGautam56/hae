@@ -31,11 +31,11 @@ export async function GET(request: Request) {
     if (reportType === "trial_balance" || reportType === "general_ledger") {
       const { data: accounts, error: accountsError } = await db.from("accounts").select("id,code,name,account_type,normal_side").eq("company_id", company.id).eq("active", true).order("code");
       if (accountsError) throw accountsError;
-      let linesQuery = db.from("journal_lines").select("id,account_id,party_id,description,debit,credit,accounts(code,name,account_type),journal_entries!inner(id,entry_date,reference,description,fiscal_year_id)").eq("company_id", company.id).eq("journal_entries.fiscal_year_id", fy.id).gte("journal_entries.entry_date", dateFrom).lte("journal_entries.entry_date", dateTo);
+      let linesQuery = db.from("journal_lines").select("id,account_id,party_id,description,debit,credit,accounts!journal_line_company_account_fkey(code,name,account_type),journal_entries!journal_line_company_entry_fkey!inner(id,entry_date,reference,description,fiscal_year_id)").eq("company_id", company.id).eq("journal_entries.fiscal_year_id", fy.id).gte("journal_entries.entry_date", dateFrom).lte("journal_entries.entry_date", dateTo);
       if (accountId) linesQuery = linesQuery.eq("account_id", accountId);
       const { data: periodLines, error: linesError } = await linesQuery;
       if (linesError) throw linesError;
-      const { data: earlier, error: earlierError } = await db.from("journal_lines").select("account_id,debit,credit,journal_entries!inner(entry_date,fiscal_year_id)").eq("company_id", company.id).eq("journal_entries.fiscal_year_id", fy.id).gte("journal_entries.entry_date", fy.start_ad).lt("journal_entries.entry_date", dateFrom);
+      const { data: earlier, error: earlierError } = await db.from("journal_lines").select("account_id,debit,credit,journal_entries!journal_line_company_entry_fkey!inner(entry_date,fiscal_year_id)").eq("company_id", company.id).eq("journal_entries.fiscal_year_id", fy.id).gte("journal_entries.entry_date", fy.start_ad).lt("journal_entries.entry_date", dateFrom);
       if (earlierError) throw earlierError;
       const opening = new Map<string,number>();
       for (const x of earlier || []) opening.set(x.account_id, (opening.get(x.account_id) || 0) + Number(x.debit) - Number(x.credit));
@@ -54,10 +54,10 @@ export async function GET(request: Request) {
       return NextResponse.json({company,fiscalYear:fy,from:dateFrom,to:dateTo,reportType,accounts,opening:accountId?(opening.get(accountId)||0):null,closing:accountId?running:null,totals,rows});
     }
 
-    const voucherFields="id,voucher_no,voucher_type,voucher_date,narration,payment_mode,cheque_status,subtotal,discount_amount,tax_amount,total,party_id,parties(name)";
+    const voucherFields="id,voucher_no,voucher_type,voucher_date,narration,payment_mode,cheque_status,subtotal,discount_amount,tax_amount,total,party_id,parties!vouchers_company_party_fkey(name)";
     let voucherQuery = partyId
-      ? db.from("vouchers").select(`${voucherFields},ledger_entries!inner(id,entry_date,debit,credit,account_name,created_at)`).eq("company_id",company.id).eq("fiscal_year_id",fy.id).eq("party_id",partyId).gte("ledger_entries.entry_date",dateFrom).lte("ledger_entries.entry_date",dateTo).order("voucher_date").order("created_at")
-      : db.from("vouchers").select(`${voucherFields},ledger_entries(id,entry_date,debit,credit,account_name,created_at)`).eq("company_id",company.id).eq("fiscal_year_id",fy.id).gte("voucher_date",dateFrom).lte("voucher_date",dateTo).order("voucher_date").order("created_at");
+      ? db.from("vouchers").select(`${voucherFields},ledger_entries!ledger_company_voucher_fkey!inner(id,entry_date,debit,credit,account_name,created_at)`).eq("company_id",company.id).eq("fiscal_year_id",fy.id).eq("party_id",partyId).gte("ledger_entries.entry_date",dateFrom).lte("ledger_entries.entry_date",dateTo).order("voucher_date").order("created_at")
+      : db.from("vouchers").select(`${voucherFields},ledger_entries!ledger_company_voucher_fkey(id,entry_date,debit,credit,account_name,created_at)`).eq("company_id",company.id).eq("fiscal_year_id",fy.id).gte("voucher_date",dateFrom).lte("voucher_date",dateTo).order("voucher_date").order("created_at");
     const voucherReportTypes:Record<string,string>={sales:"sale",purchases:"purchase",payments:"receipt",expenses:"expense"};
     if (voucherReportTypes[reportType]) voucherQuery = voucherQuery.eq("voucher_type", voucherReportTypes[reportType]);
     const { data: vouchers, error: voucherError } = await voucherQuery;
@@ -69,7 +69,7 @@ export async function GET(request: Request) {
       const [{ data: partyRow, error: partyError }, { data: openingRow, error: openingError }, { data: earlier, error: earlierError }] = await Promise.all([
         db.from("parties").select("id,name,place,phone,tax_no,opening_balance").eq("id", partyId).eq("company_id", company.id).single(),
         db.from("party_opening_balances").select("amount").eq("fiscal_year_id", fy.id).eq("party_id", partyId).maybeSingle(),
-        db.from("ledger_entries").select("debit,credit,vouchers!inner(fiscal_year_id)").eq("company_id", company.id).eq("party_id", partyId).eq("vouchers.fiscal_year_id", fy.id).gte("entry_date", fy.start_ad).lt("entry_date", dateFrom),
+        db.from("ledger_entries").select("debit,credit,vouchers!ledger_company_voucher_fkey!inner(fiscal_year_id)").eq("company_id", company.id).eq("party_id", partyId).eq("vouchers.fiscal_year_id", fy.id).gte("entry_date", fy.start_ad).lt("entry_date", dateFrom),
       ]);
       if (partyError || openingError || earlierError) throw partyError || openingError || earlierError;
       party = partyRow;

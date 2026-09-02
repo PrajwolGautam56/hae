@@ -13,7 +13,7 @@ async function list() {
   if (!db) throw new Error("Supabase server configuration is missing");
   const company = await getSelectedBusinessCompany(db);
   const [{ data, error }, { data: banks, error: bankError }, { data: accounts, error: accountError }] = await Promise.all([
-    db.from("vouchers").select("id,voucher_no,voucher_date,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,narration,party_id,money_account_id,parties(name,phone),money_account:money_accounts(name,account_type)").eq("company_id", company.id).eq("voucher_type", "receipt").eq("payment_mode", "Cheque").order("cheque_exchange_date", { ascending: true }).order("created_at", { ascending: false }),
+    db.from("vouchers").select("id,voucher_no,voucher_date,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,narration,party_id,money_account_id,parties!vouchers_company_party_fkey(name,phone),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)").eq("company_id", company.id).eq("voucher_type", "receipt").eq("payment_mode", "Cheque").order("cheque_exchange_date", { ascending: true }).order("created_at", { ascending: false }),
     db.from("cheque_banks").select("id,name").eq("company_id", company.id).eq("active", true).order("name"),
     db.from("money_account_balances").select("id,name,account_type,balance").eq("company_id", company.id).eq("active", true).in("account_type", ["bank", "office_cash"]).order("account_type").order("name"),
   ]);
