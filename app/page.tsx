@@ -10,18 +10,21 @@ import ChequeWorkspace from "./cheque-workspace";
 import FundsWorkspace from "./funds-workspace";
 import OrdersWorkspace from "./orders-workspace";
 import ClientAccessPanel from "./client-access-panel";
+import AccountingOperationsWorkspace from "./accounting-operations-workspace";
 import { getCachedJson, invalidateClientCache } from "../lib/client-data-cache";
 
 const nav = [
   "Overview",
   "Sales",
   "Purchases",
+  "Accounting",
   "Payments",
   "Orders",
   "Cheques",
   "Parties",
   "Inventory",
   "Stock",
+  "Manufacturing",
   "Cash & Bank",
   "Expenses",
   "Reports",
@@ -35,9 +38,10 @@ const navFeature: Record<string, string> = {
   Cheques: "cheques", Parties: "accounting", Inventory: "inventory", Stock: "inventory",
   "Cash & Bank": "cash_bank", Expenses: "accounting", Reports: "reports",
   Leads: "crm", Tasks: "tasks", Activity: "crm", Team: "accounting",
+  Accounting: "accounting", Manufacturing: "manufacturing",
 };
 
-const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Payments:"M4 7h16M4 12h16M4 17h10",Orders:"M6 6h15l-2 8H8L6 3H3m6 15a1 1 0 1 0 0 2 1 1 0 0 0 0-2m8 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10","Cash & Bank":"M3 7h18v13H3zM7 7V5h10v2M7 12h4m6 0h.01M7 16h10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
+const iconPaths:Record<string,string>={Overview:"M3 11.5 12 4l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",Sales:"M5 19 19 5m-9 0h9v9",Purchases:"M19 5 5 19m9 0H5v-9",Accounting:"M4 6h16M6 10h12M8 14h8M10 18h4",Manufacturing:"M4 20h16M6 20V9l4 3V9l4 3V5h4v15M8 16h2m4 0h2",Payments:"M4 7h16M4 12h16M4 17h10",Orders:"M6 6h15l-2 8H8L6 3H3m6 15a1 1 0 1 0 0 2 1 1 0 0 0 0-2m8 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2",Cheques:"M3 6h18v12H3zM7 14h4",Parties:"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m13 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1",Inventory:"M4 7h16v13H4zM8 3h8v4M8 11h8",Stock:"M3 7l9-4 9 4-9 4zM3 7v10l9 4 9-4V7M12 11v10","Cash & Bank":"M3 7h18v13H3zM7 7V5h10v2M7 12h4m6 0h.01M7 16h10",Expenses:"M6 2h9l3 3v17H6zM9 13h6M9 17h4",Reports:"M4 19V9m5 10V5m5 14v-7m5 7V3",Leads:"M12 22s7-4.35 7-11A7 7 0 1 0 5 11c0 6.65 7 11 7 11m0-8a3 3 0 1 0 0-6 3 3 0 0 0 0 6",Tasks:"M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11",Activity:"M3 12h4l2-7 4 14 2-7h6",Team:"M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8m14 10v-2a4 4 0 0 0-3-3.87m-2-12a4 4 0 0 1 0 7.75 1"};
 function NavIcon({name}:{name:string}){return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={iconPaths[name]||iconPaths.Overview}/></svg>}
 const transactionIcon = (type: string) => type === "Sales Invoice" ? "Sales" : type === "Payment Received" ? "Payments" : type === "Purchase" ? "Purchases" : "Expenses";
 
@@ -51,6 +55,7 @@ const compactMoney = (n: number) => {
 };
 const localBusinessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const today = localBusinessDate();
+const standardUnits = ["pcs", "litre", "ml", "kg", "gram", "bag", "box", "bucket", "drum", "sheet", "meter", "feet", "set", "dozen"];
 const parseDate = (value: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(`${value}T12:00:00`)
@@ -143,10 +148,12 @@ export default function Home() {
   const [unit, setUnit] = useState("pcs");
   const [salePrice, setSalePrice] = useState("");
   const [purchasePrice, setPurchasePrice] = useState("");
+  const [mrp, setMrp] = useState("");
   const [openingStock, setOpeningStock] = useState("");
   const [openingBalance, setOpeningBalance] = useState("");
   const [openingSide, setOpeningSide] = useState<"debit" | "credit">("debit");
   const [transactionDate, setTransactionDate] = useState(today);
+  const [dueDate, setDueDate] = useState("");
   const [voucherDetail, setVoucherDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editingVoucherId, setEditingVoucherId] = useState("");
@@ -199,6 +206,12 @@ export default function Home() {
               receipt: "Payment Received",
               payment: "Payment Given",
               purchase: "Purchase",
+              sale_return: "Sales Return",
+              purchase_return: "Purchase Return",
+              journal: "Journal Voucher",
+              contra: "Contra Voucher",
+              stock_adjustment: "Stock Journal",
+              payroll: "Payroll Voucher",
               expense: "Office Expense",
             } as any
           )[t.type] || t.type,
@@ -314,6 +327,7 @@ export default function Home() {
         chequeBank,
         chequeExchangeDate,
         date: transactionDate,
+        dueDate: dueDate || null,
         fiscalYearId: fiscalYear?.id,
         lines: validLines.map((l) => ({
           product_id: l.productId || null,
@@ -330,6 +344,7 @@ export default function Home() {
         unit,
         salePrice: Number(salePrice || 0),
         purchasePrice: Number(purchasePrice || 0),
+        mrp: Number(mrp || 0),
         openingStock: Number(openingStock || 0),
         openingBalance:
           Number(openingBalance || 0) * (openingSide === "credit" ? -1 : 1),
@@ -369,10 +384,12 @@ export default function Home() {
     setSku("");
     setSalePrice("");
     setPurchasePrice("");
+    setMrp("");
     setOpeningStock("");
     setOpeningBalance("");
     setOpeningSide("debit");
-    setNotice(`${kind} saved in local database`);
+    setDueDate("");
+    setNotice(`${kind} saved successfully`);
     refreshChequeCounts();
     window.setTimeout(() => setNotice(""), 2600);
   }
@@ -381,9 +398,11 @@ export default function Home() {
     setModal("sale");
     setFormParty(parties[0]?.name || "__new__");
     setSaleLines([emptySaleLine()]);
+    setDiscountPercent(0); setTaxPercent(13); setParticulars("");
     setNewPartyName("");
     setPlace(""); setPhone(""); setTaxNo("");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
+    setDueDate("");
   }
   function openPayment() {
     setEditingVoucherId("");
@@ -395,6 +414,7 @@ export default function Home() {
     setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="employee_wallet"&&account.team_member_id===collectorId)?.id||moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||"");
     setPlace(""); setPhone(""); setTaxNo("");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
+    setDueDate("");
   }
   function openModuleModal(kind: "purchase" | "expense" | "party" | "product") {
     setEditingProductId("");
@@ -402,12 +422,13 @@ export default function Home() {
     setAmount("");
     setParticulars("");
     setEntityName("");
-    if (kind === "product") { setSku(""); setUnit("pcs"); setSalePrice(""); setPurchasePrice(""); setOpeningStock(""); }
+    if (kind === "product") { setSku(""); setUnit("pcs"); setSalePrice(""); setPurchasePrice(""); setMrp(""); setOpeningStock(""); }
     setOpeningBalance(""); setOpeningSide("debit");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
     if(kind==="expense"){setPaymentMode("Cash");setHandledBy(currentMember?.id||"");setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||moneyAccounts[0]?.id||"")}
     if (kind === "purchase") {
       setSaleLines([emptySaleLine()]);
+      setDiscountPercent(0); setTaxPercent(13);
       setFormParty(parties[0]?.name || "__new__");
       setNewPartyName("");
       setPlace(""); setPhone(""); setTaxNo("");
@@ -420,6 +441,7 @@ export default function Home() {
     setUnit(product.unit || "pcs");
     setProductType(product.item_type || "finished_good");
     setPurchasePrice(String(product.purchase_price ?? 0));
+    setMrp(String(product.mrp ?? 0));
     setSalePrice(String(product.sale_price ?? 0));
     setOpeningStock(String(product.stock_qty ?? 0));
     setModal("product");
@@ -480,7 +502,7 @@ export default function Home() {
   }
   function editVoucher() {
     const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type))return;
-    setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setParticulars(detail.narration||"");
+    setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
     if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setModal("sale");}
     else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
     setVoucherDetail(null);
@@ -527,7 +549,7 @@ export default function Home() {
   const nextInvoice = nextNumbers.sale;
   function openPrimaryAction(){if(active==="Sales")openSale();else if(active==="Purchases")openModuleModal("purchase");else if(active==="Payments")openPayment();else if(active==="Parties")openModuleModal("party");else if(active==="Inventory"||active==="Stock")openModuleModal("product");else if(active==="Expenses")openModuleModal("expense")}
   async function exportModule(module:string){
-    if(module==="Inventory"||module==="Stock"){const rows=products.filter(p=>module==="Inventory"?["raw_material","packaging"].includes(p.item_type):["finished_good","resale_good"].includes(p.item_type));downloadCsv(`${module}-FY-${fiscalYear?.label_bs}`,rows,[{label:"SKU",value:(r:any)=>r.sku},{label:"Product",value:(r:any)=>r.name},{label:"Type",value:(r:any)=>r.item_type},{label:"Unit",value:(r:any)=>r.unit},{label:"Purchase price",value:(r:any)=>r.purchase_price},{label:"Sale price",value:(r:any)=>r.sale_price},{label:"Stock quantity",value:(r:any)=>r.stock_qty}]);return}
+    if(module==="Inventory"||module==="Stock"){const rows=products.filter(p=>module==="Inventory"?["raw_material","packaging"].includes(p.item_type):["finished_good","resale_good"].includes(p.item_type));downloadCsv(`${module}-FY-${fiscalYear?.label_bs}`,rows,[{label:"SKU",value:(r:any)=>r.sku},{label:"Product",value:(r:any)=>r.name},{label:"Type",value:(r:any)=>r.item_type},{label:"Unit",value:(r:any)=>r.unit},{label:"Purchase price",value:(r:any)=>r.purchase_price},{label:"Sale price",value:(r:any)=>r.sale_price},{label:"MRP",value:(r:any)=>r.mrp},{label:"Stock quantity",value:(r:any)=>r.stock_qty}]);return}
     if(module==="Parties"){downloadCsv(`Parties-FY-${fiscalYear?.label_bs}`,parties,[{label:"Party",value:(r:any)=>r.name},{label:"Address",value:(r:any)=>r.place},{label:"Phone",value:(r:any)=>r.phone},{label:"PAN",value:(r:any)=>r.tax_no},{label:"Opening balance",value:(r:any)=>r.opening_balance},{label:"Current balance",value:(r:any)=>r.balance}]);return}
     const reportType=module==="Sales"?"sales":module==="Purchases"?"purchases":module==="Payments"?"payments":"expenses";try{const q=new URLSearchParams({fiscalYearId:fiscalYear.id,type:reportType,from:fiscalYear.start_ad,to:fiscalYear.end_ad});const response=await fetch(`/api/reports?${q}`,{cache:"no-store"});const data=await response.json();if(!response.ok)throw new Error(data.error);downloadCsv(`${module}-FY-${fiscalYear?.label_bs}`,data.rows,[{label:"Reference",value:(r:any)=>r.ref},{label:"Date (BS)",value:(r:any)=>formatBs(r.date)},{label:"Party / Account",value:(r:any)=>r.party},{label:"Particulars",value:(r:any)=>r.particulars},{label:"Payment mode",value:(r:any)=>r.paymentMode},{label:"Subtotal",value:(r:any)=>r.subtotal},{label:"Discount",value:(r:any)=>r.discount},{label:"Tax",value:(r:any)=>r.tax},{label:"Amount",value:(r:any)=>r.amount},{label:"Debit",value:(r:any)=>r.debit},{label:"Credit",value:(r:any)=>r.credit}])}catch(error){setNotice(error instanceof Error?error.message:"Download failed")}
   }
@@ -979,6 +1001,10 @@ export default function Home() {
                 </div>
               </article>
             </section>
+          ) : active === "Accounting" ? (
+            <AccountingOperationsWorkspace mode="accounting" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
+          ) : active === "Manufacturing" ? (
+            <AccountingOperationsWorkspace mode="manufacturing" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
           ) : active === "Cash & Bank" ? (
             <FundsWorkspace fiscalYear={fiscalYear} onNotice={setNotice} />
           ) : active === "Orders" ? (
@@ -1068,6 +1094,7 @@ export default function Home() {
                           <th>UNIT</th>
                           <th>PURCHASE</th>
                           <th>SALE</th>
+                          <th>MRP</th>
                           <th>STOCK</th>
                           <th></th>
                         </tr>
@@ -1083,13 +1110,14 @@ export default function Home() {
                             <td>{p.unit}</td>
                             <td>{money(Number(p.purchase_price))}</td>
                             <td>{money(Number(p.sale_price))}</td>
+                            <td>{money(Number(p.mrp))}</td>
                             <td>
                               <strong>{p.stock_qty}</strong>
                             </td>
                             <td><button className="table-action" onClick={() => editProduct(p)}>Edit</button></td>
                           </tr>
                         ))}
-                        {!registerProducts.length && <tr><td colSpan={8} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
+                        {!registerProducts.length && <tr><td colSpan={9} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
                       </tbody>
                     </table>
                   ) : active === "Parties" ? (
@@ -1225,6 +1253,7 @@ export default function Home() {
                 <div className="voucher-meta">
                   <div><small>PARTY / CUSTOMER</small><strong>{voucherDetail.parties?.name || "Cash / General"}</strong><span>{[voucherDetail.parties?.place, voucherDetail.parties?.phone, voucherDetail.parties?.tax_no ? `PAN ${voucherDetail.parties.tax_no}` : ""].filter(Boolean).join(" · ") || "No additional details"}</span></div>
                   <div><small>DATE</small><strong>{calendar === "BS" ? bsDate(voucherDetail.voucher_date) : adDate(voucherDetail.voucher_date)}</strong><span>AD {adDate(voucherDetail.voucher_date)}</span></div>
+                  {voucherDetail.due_date&&<div><small>DUE DATE</small><strong>{calendar === "BS" ? bsDate(voucherDetail.due_date) : adDate(voucherDetail.due_date)}</strong><span>AD {adDate(voucherDetail.due_date)}</span></div>}
                   <div><small>{voucherDetail.voucher_type === "receipt" ? "RECEIPT NO." : "INVOICE NO."}</small><strong>{voucherDetail.sequence_no || voucherDetail.voucher_no}</strong><span>FY {voucherDetail.fiscal_years?.label_bs}</span></div>
                 </div>
                 <div className="voucher-audit"><span><small>GENERATED BY</small><strong>{voucherDetail.generator?.name || "Office"}</strong></span>{voucherDetail.handler?.name&&<span><small>COLLECTED / HANDLED BY</small><strong>{voucherDetail.handler.name}</strong></span>}{voucherDetail.money_account?.name&&<span><small>CASH / BANK ACCOUNT</small><strong>{voucherDetail.money_account.name}</strong></span>}</div>
@@ -1356,6 +1385,7 @@ export default function Home() {
               {(modal === "sale" || modal === "purchase") && (
                 <div className="invoice-section-title full"><span>02</span><div><strong>Items & pricing</strong><small>Add products, quantity and rate. Scroll normally for totals.</small></div></div>
               )}
+              {(modal === "sale" || modal === "purchase") && <label>Due date / payment term (BS)<BsDateInput value={dueDate} onChange={setDueDate}/></label>}
               {modal === "sale" || modal === "purchase" ? (
                 <div className="invoice-builder full">
                   <div className="line-head">
@@ -1373,14 +1403,14 @@ export default function Home() {
                           onChange={(e) => chooseProduct(index, e.target.value)}
                         >
                           <option value="">Custom / non-inventory item</option>
-                          {products.map((p) => (
+                          {products.filter((p)=>modal === "sale" ? ["finished_good","resale_good"].includes(p.item_type) : true).map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name} · Stock {p.stock_qty}
                             </option>
                           ))}
                         </select>
                         {!line.productId && (
-                          <><input value={line.name} onChange={(e) => updateSaleLine(index, { name: e.target.value })} placeholder="Type item name" />{modal === "purchase" && <div className="purchase-item-meta"><select aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})}><option value="pcs">pcs</option><option value="litre">litre</option><option value="ml">ml</option><option value="kg">kg</option><option value="bag">bag</option><option value="box">box</option><option value="bucket">bucket</option></select><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
+                          <><input value={line.name} onChange={(e) => updateSaleLine(index, { name: e.target.value })} placeholder="Type item name" />{modal === "purchase" && <div className="purchase-item-meta"><input list="product-unit-options" aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})} placeholder="Type unit"/><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
                         )}
                       </div>
                       <input
@@ -1478,7 +1508,7 @@ export default function Home() {
                     <div className="grand">
                       <span>Grand total</span>
                       <strong>
-                        {money(modal === "purchase" ? saleSubtotal : saleGrand)}
+                        {money(saleGrand)}
                       </strong>
                     </div>
                   </div>
@@ -1542,7 +1572,7 @@ export default function Home() {
                 <button className="review-total" onClick={reviewInvoiceTotal}>
                   <span>Review total ↓</span>
                   <strong>
-                    {money(modal === "purchase" ? saleSubtotal : saleGrand)}
+                    {money(saleGrand)}
                   </strong>
                 </button>
               )}
@@ -1657,19 +1687,12 @@ export default function Home() {
                   </label>
                   <label>
                     Unit
-                    <select
+                    <input
+                      list="product-unit-options"
                       value={unit}
                       onChange={(e) => setUnit(e.target.value)}
-                    >
-                      <option>pcs</option>
-                      <option>bag</option>
-                      <option>kg</option>
-                      <option>box</option>
-                      <option>sheet</option>
-                      <option>meter</option>
-                      <option value="litre">litre</option>
-                      <option value="ml">ml</option>
-                    </select>
+                      placeholder="Select or type any unit"
+                    />
                   </label>
                   <label>
                     Inventory type
@@ -1694,6 +1717,14 @@ export default function Home() {
                       type="number"
                       value={salePrice}
                       onChange={(e) => setSalePrice(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    MRP / Maximum retail price
+                    <input
+                      type="number"
+                      value={mrp}
+                      onChange={(e) => setMrp(e.target.value)}
                     />
                   </label>
                   <label>
@@ -1725,6 +1756,7 @@ export default function Home() {
           </section>
         </div>
       )}
+      <datalist id="product-unit-options">{standardUnits.map((value)=><option key={value} value={value}/>)}</datalist>
       {notice && <div className="toast">✓ {notice}</div>}
       {sidebarOpen && (
         <button

@@ -79,3 +79,42 @@ test("embedded business reads disambiguate tenant-safe foreign keys", async () =
   assert.match(crm, /team_members!leads_company_assignee_fkey/);
   assert.match(orders, /parties!orders_company_party_fkey/);
 });
+
+test("accounting operations remain tenant scoped and server-only", async () => {
+  const [route, migration] = await Promise.all([
+    source("app/api/accounting-suite/route.ts"),
+    source("supabase/migrations/202609040001_accounting_operations_suite.sql"),
+  ]);
+  assert.match(route, /assertCompanyRecord\(db, "purchase_orders"/);
+  assert.match(route, /assertCompanyRecords\(db, "accounts"/);
+  assert.match(route, /assertCompanyRecords\(db, "money_accounts"/);
+  assert.match(route, /assertCompanyRecord\(db, "bills_of_materials"/);
+  assert.match(migration, /po_company_supplier_fkey/i);
+  assert.match(migration, /bom_component_company_guard/i);
+  assert.match(migration, /payroll_line_company_guard/i);
+  assert.match(migration, /revoke all on function public\.record_manual_journal/i);
+  assert.match(migration, /grant execute on function public\.record_goods_return[^;]+to service_role/is);
+});
+
+test("non-posting purchase orders, balanced journals and BOM production are explicit", async () => {
+  const migration = await source("supabase/migrations/202609040001_accounting_operations_suite.sql");
+  const purchaseOrderFunction = migration.slice(migration.indexOf("create or replace function public.record_purchase_order"), migration.indexOf("create or replace function public.convert_purchase_order_to_bill"));
+  assert.doesNotMatch(purchaseOrderFunction, /insert into vouchers|insert into ledger_entries|insert into stock_movements/i);
+  assert.match(migration, /Journal debit and credit must be equal/);
+  assert.match(migration, /record_bom_production/);
+  assert.match(migration, /Production consumption/);
+  assert.match(migration, /Cost of goods sold/);
+});
+
+test("report center includes financial, ageing, tax and stock controls", async () => {
+  const [route, workspace] = await Promise.all([
+    source("app/api/reports/route.ts"), source("app/reports-workspace.tsx"),
+  ]);
+  for (const report of ["balance_sheet", "profit_loss", "aging_receivable", "aging_payable", "stock_statement", "stock_movement", "tax_summary"]) {
+    assert.match(route, new RegExp(report));
+    assert.match(workspace, new RegExp(report));
+  }
+  assert.match(route, /allocation: "FIFO"/);
+  assert.match(workspace, /0–30 DAYS/);
+  assert.match(workspace, /ABOVE 90 DAYS/);
+});

@@ -10,6 +10,7 @@ import "./lead-location.css";
 import "./client-auth.css";
 import "./pwa.css";
 import "./platform-admin.css";
+import "./accounting-operations.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

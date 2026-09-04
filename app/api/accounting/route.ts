@@ -44,7 +44,7 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)",
+        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type),ledger_entries!ledger_company_voucher_fkey(debit,credit)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
@@ -64,7 +64,7 @@ async function snapshot(requestedFy?: string) {
     supabase
       .from("products")
       .select(
-        "id,sku,name,unit,sale_price,purchase_price,stock_qty,low_stock_at,item_type",
+        "id,sku,name,unit,sale_price,purchase_price,mrp,stock_qty,low_stock_at,item_type",
       )
       .eq("company_id", company.id)
       .eq("active", true)
@@ -108,8 +108,8 @@ async function snapshot(requestedFy?: string) {
     ref: v.voucher_no,
     date: v.voucher_date,
     particulars: cancelledCheque?`${v.narration||"Cheque receipt"} · Cancelled / adjusted`:v.narration,
-    debit: v.voucher_type === "sale" || cancelledCheque ? Number(v.total) : 0,
-    credit: v.voucher_type !== "sale" ? Number(v.total) : 0,
+    debit: (v.ledger_entries as any[])?.reduce((sum:number,entry:any)=>sum+Number(entry.debit),0) || (["sale","purchase_return"].includes(v.voucher_type) || cancelledCheque ? Number(v.total) : 0),
+    credit: (v.ledger_entries as any[])?.reduce((sum:number,entry:any)=>sum+Number(entry.credit),0) || (["receipt","sale_return","purchase"].includes(v.voucher_type) ? Number(v.total) : 0),
     payment_mode: v.payment_mode,
     cheque_no: v.cheque_no,
     cheque_bank: v.cheque_bank,
@@ -135,6 +135,7 @@ async function snapshot(requestedFy?: string) {
   };
   for (const v of fiscalVouchers || []) {
     if (v.voucher_type === "sale") totals.sales += Number(v.total);
+    if (v.voucher_type === "sale_return") totals.sales -= Number(v.total);
     if (v.voucher_type === "receipt" && !(v.payment_mode === "Cheque" && v.cheque_status === "cancelled")) totals.received += Number(v.total);
     if (v.voucher_type === "expense") totals.expenses += Number(v.total);
   }
@@ -157,6 +158,7 @@ async function snapshot(requestedFy?: string) {
     const bucket = performance.get(`${parts.year}-${parts.month}`);
     if (!bucket) continue;
     if (voucher.voucher_type === "sale") bucket.sales += Number(voucher.total);
+    if (voucher.voucher_type === "sale_return") bucket.sales -= Number(voucher.total);
     if (voucher.voucher_type === "receipt" && !(voucher.payment_mode === "Cheque" && voucher.cheque_status === "cancelled")) bucket.collections += Number(voucher.total);
   }
   return {
@@ -195,7 +197,7 @@ export async function GET(request: Request) {
       if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
-        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
+        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,due_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
         .eq("id", voucherId)
         .eq("company_id", selectedCompany.id)
         .single();
@@ -282,6 +284,7 @@ export async function POST(request: Request) {
           unit: String(body.unit || "pcs"),
           sale_price: Number(body.salePrice || 0),
           purchase_price: Number(body.purchasePrice || 0),
+          mrp: Number(body.mrp || 0),
           stock_qty: Number(body.openingStock || 0),
           low_stock_at: Number(body.lowStockAt || 0),
           item_type: String(body.productType || "finished_good"),
@@ -353,12 +356,14 @@ export async function POST(request: Request) {
     }
     const result =
       type === "purchase"
-        ? await supabase.rpc("record_purchase_bill", {
+        ? await supabase.rpc("record_purchase_invoice", {
             p_company_id: state.company.id,
             p_fiscal_year_id: state.fiscalYear.id,
             p_party_id: partyId,
             p_date: String(body.date || businessDate()),
             p_lines: lines,
+            p_discount_percent: Number(body.discountPercent || 0),
+            p_tax_percent: Number(body.taxPercent || 0),
             p_narration: String(body.particulars || ""),
           })
         : type === "sale"
@@ -403,7 +408,7 @@ export async function POST(request: Request) {
     if (["sale", "purchase"].includes(type)) {
       const voucherId = (result.data as any)?.id;
       if (voucherId) {
-        const { error: attributionError } = await supabase.from("vouchers").update({ generated_by: currentMember.id, handled_by: currentMember.id }).eq("id", voucherId).eq("company_id", state.company.id);
+        const { error: attributionError } = await supabase.from("vouchers").update({ generated_by: currentMember.id, handled_by: currentMember.id, due_date: body.dueDate || null }).eq("id", voucherId).eq("company_id", state.company.id);
         if (attributionError) throw attributionError;
       }
     }
@@ -451,7 +456,7 @@ export async function PUT(request: Request) {
       const state=await accountingContext(String(body.fiscalYearId||""));
       const name=String(body.productName||"").trim();
       if(!name)return NextResponse.json({error:"Product name is required"},{status:400});
-      const values={name,sku:String(body.sku||""),unit:String(body.unit||"pcs"),sale_price:Number(body.salePrice||0),purchase_price:Number(body.purchasePrice||0),item_type:String(body.productType||"finished_good")};
+      const values={name,sku:String(body.sku||""),unit:String(body.unit||"pcs"),sale_price:Number(body.salePrice||0),purchase_price:Number(body.purchasePrice||0),mrp:Number(body.mrp||0),item_type:String(body.productType||"finished_good")};
       if(!Number.isFinite(values.sale_price)||!Number.isFinite(values.purchase_price)||values.sale_price<0||values.purchase_price<0)return NextResponse.json({error:"Product prices must be valid positive numbers"},{status:400});
       const {data,error}=await supabase.from("products").update(values).eq("id",productId).eq("company_id",state.company.id).select("id").maybeSingle();
       if(error)throw error;if(!data)return NextResponse.json({error:"Product was not found"},{status:404});
@@ -489,6 +494,13 @@ export async function PUT(request: Request) {
         const {error:insertMovementError}=await supabase.from("money_movements").insert({...movementValues,company_id:legacyVoucher.company_id,fiscal_year_id:legacyVoucher.fiscal_year_id,voucher_id:voucherId,movement_type:"customer_receipt",party_id:legacyVoucher.party_id,generated_by:currentMember.id,reference:legacyVoucher.voucher_no,notes:String(body.particulars||"")});if(insertMovementError)throw insertMovementError;
         }
       }
+    } else {
+      const { error: dueDateError } = await supabase
+        .from("vouchers")
+        .update({ due_date: body.dueDate || null })
+        .eq("id", voucherId)
+        .eq("company_id", selectedCompany.id);
+      if (dueDateError) throw dueDateError;
     }
     const {data:voucher}=await supabase.from("vouchers").select("fiscal_year_id,company_id").eq("id",voucherId).eq("company_id",selectedCompany.id).single();
     if(voucher)await supabase.rpc("refresh_future_opening_balances",{p_company_id:voucher.company_id,p_from_fiscal_year_id:voucher.fiscal_year_id});

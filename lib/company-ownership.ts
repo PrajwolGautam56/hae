@@ -4,7 +4,8 @@ type Db = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 type CompanyOwnedTable =
   | "parties" | "products" | "vouchers" | "fiscal_years" | "team_members"
   | "money_accounts" | "leads" | "work_tasks" | "crm_activities"
-  | "customer_orders" | "production_batches";
+  | "customer_orders" | "production_batches" | "purchase_orders"
+  | "bills_of_materials" | "accounts";
 
 export async function assertCompanyRecord(
   db: Db,
