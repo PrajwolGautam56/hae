@@ -243,12 +243,14 @@ export default function PlatformAdminPage() {
   const activeClients = data.tenants.filter(
     (item) => item.status === "active",
   ).length;
-  const readyCompanies = data.companies.filter(
-    (item) => item.database_status === "ready",
-  ).length;
-  const pending = data.companies.filter(
-    (item) => item.database_status !== "ready",
-  ).length;
+  const readyCompanies = data.companies.filter((item) => {
+    const users = data.companyUsers.filter(
+      (user) => user.company_id === item.app_company_id && user.active,
+    );
+    return Boolean(item.app_company_id) && item.database_status === "ready" &&
+      item.login_enabled && users.some((user) => user.role === "admin");
+  }).length;
+  const pending = data.companies.length - readyCompanies;
   const expiring = data.subscriptions.filter(
     (item) =>
       item.expires_on && new Date(item.expires_on).getTime() < renewalCutoff,
@@ -595,6 +597,13 @@ export default function PlatformAdminPage() {
                   />
                 </div>
                 <span>{companies.length} companies</span>
+              </div>
+              <div className="pc-onboarding-guide" aria-label="Company onboarding steps">
+                <span><b>1</b><small>Provision workspace</small></span>
+                <i>→</i>
+                <span><b>2</b><small>Add first admin</small></span>
+                <i>→</i>
+                <span><b>3</b><small>Activate login</small></span>
               </div>
               <div className="pc-table-wrap">
                 <table>

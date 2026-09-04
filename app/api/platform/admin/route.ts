@@ -320,11 +320,10 @@ export async function POST(request: Request) {
       redirect.searchParams.set("type", "recovery");
       await sendTeamEmail({ to: email, subject: `Your ${platformCompany.name} account`, heading: "Your company account is ready", message: `Hi ${name}, you have been added to ${platformCompany.name} as ${role}. Use the secure link below to choose your password.`, actionLabel: "Set password", actionUrl: redirect.toString(), brandName: platformCompany.name, footer: `${tenant.name} · Powered by Kritech Global` });
       if (role === "admin") {
-        await Promise.all([
-          db.from("platform_companies").update({ login_enabled: true, status: "active", database_status: "ready", updated_at: new Date().toISOString() }).eq("id", platformCompany.id).eq("tenant_id", platformCompany.tenant_id),
-          unified.from("platform_companies").update({ login_enabled: true, status: "active", database_status: "ready", updated_at: new Date().toISOString() }).eq("id", platformCompany.id).eq("tenant_id", platformCompany.tenant_id),
-          db.from("platform_tenants").update({ onboarding_stage: "domain", updated_at: new Date().toISOString() }).eq("id", platformCompany.tenant_id),
-        ]);
+        const { error: stageError } = await db.from("platform_tenants")
+          .update({ onboarding_stage: "activation", updated_at: new Date().toISOString() })
+          .eq("id", platformCompany.tenant_id);
+        if (stageError) throw stageError;
       }
       await writePlatformAudit(db, admin, request, { action, entityType: "company_user", entityId: member.id, summary: `Added ${email} to ${platformCompany.name}`, metadata: { platformCompanyId, role, createdAuth } });
       return NextResponse.json({ success: true });

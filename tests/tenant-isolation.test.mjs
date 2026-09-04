@@ -57,6 +57,7 @@ test("platform onboarding provisions and scopes company users", async () => {
   assert.match(route, /subscription has used all/);
   assert.match(route, /Every company must keep at least one active administrator/);
   assert.match(route, /action === "activateCompany"/);
+  assert.match(route, /onboarding_stage: "activation"/);
   assert.match(route, /platformErrorMessage/);
   assert.match(route, /Payroll Deductions Payable/);
   assert.match(page, /Add first company administrator/);
