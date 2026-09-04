@@ -24,6 +24,16 @@ function textOrNull(value: unknown) {
   return text || null;
 }
 
+function platformErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const record = error as { message?: unknown; details?: unknown; code?: unknown };
+    return [record.message, record.details, record.code ? `Code ${record.code}` : null]
+      .filter(Boolean).map(String).join(" · ");
+  }
+  return "Platform action failed";
+}
+
 async function authUserByEmail(db: NonNullable<ReturnType<typeof getUnifiedAdmin>>, email: string) {
   for (let page = 1; page <= 20; page += 1) {
     const { data, error } = await db.auth.admin.listUsers({ page, perPage: 100 });
@@ -44,8 +54,15 @@ async function seedCompanyFoundation(unified: NonNullable<ReturnType<typeof getU
     ["2000", "Accounts Payable", "liability", "credit", "accounts_payable"],
     ["3000", "Opening Balance Equity", "equity", "credit", "opening_equity"],
     ["4000", "Sales Revenue", "income", "credit", "sales_revenue"],
+    ["4010", "Sales Returns", "income", "credit", "sales_returns"],
     ["5000", "Cost of Goods Sold", "expense", "debit", "cost_of_goods"],
     ["6000", "Office and Operating Expenses", "expense", "debit", "office_expense"],
+    ["6090", "Inventory Adjustment", "expense", "debit", "inventory_adjustment"],
+    ["6100", "Payroll Expense", "expense", "debit", "payroll_expense"],
+    ["1250", "VAT / Tax Input", "asset", "debit", "tax_input"],
+    ["2050", "VAT / Tax Output Payable", "liability", "credit", "tax_output"],
+    ["2100", "Payroll Payable", "liability", "credit", "payroll_payable"],
+    ["2110", "Payroll Deductions Payable", "liability", "credit", "payroll_deductions_payable"],
   ].map(([code, name, account_type, normal_side, system_key]) => ({ company_id: companyId, code, name, account_type, normal_side, system_key, active: true }));
   const { error: accountError } = await unified.from("accounts").upsert(accounts, { onConflict: "company_id,code" });
   if (accountError) throw accountError;
@@ -135,6 +152,8 @@ export async function GET(request: Request) {
       unifiedReady: Boolean(unified) && !unifiedError,
       unifiedError,
       entitlementMigrationRequired: Boolean(entitlements.error),
+      registryMigrationRequired: Boolean(initialCompanies.error || entitlements.error),
+      registryMigrationError: [initialCompanies.error?.message, entitlements.error?.message].filter(Boolean).join(" · "),
       rootDomain: process.env.PLATFORM_ROOT_DOMAIN || "kritechglobal.com",
     });
   } catch (error: unknown) {
@@ -349,6 +368,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === "activateCompany") {
+      const companyId = String(body.companyId || "");
+      const { data: platformCompany, error: companyError } = await db.from("platform_companies")
+        .select("id,tenant_id,app_company_id,name,status,database_status")
+        .eq("id", companyId).single();
+      if (companyError) throw companyError;
+      if (!platformCompany.app_company_id || platformCompany.database_status !== "ready") {
+        return NextResponse.json({ error: "Step 1 is incomplete: provision the company workspace first" }, { status: 409 });
+      }
+      const unified = getUnifiedAdmin();
+      if (!unified) return NextResponse.json({ error: "Shared Supabase configuration is missing" }, { status: 503 });
+      const { count, error: adminCountError } = await unified.from("team_members")
+        .select("id", { count: "exact", head: true }).eq("company_id", platformCompany.app_company_id)
+        .eq("role", "admin").eq("active", true);
+      if (adminCountError) throw adminCountError;
+      if ((count || 0) === 0) return NextResponse.json({ error: "Step 2 is incomplete: add the first active company administrator" }, { status: 409 });
+      const now = new Date().toISOString();
+      const [controlCompany, unifiedCompany, tenantUpdate] = await Promise.all([
+        db.from("platform_companies").update({ status: "active", database_status: "ready", login_enabled: true, updated_at: now }).eq("id", platformCompany.id).eq("tenant_id", platformCompany.tenant_id),
+        unified.from("platform_companies").update({ status: "active", database_status: "ready", login_enabled: true, updated_at: now }).eq("id", platformCompany.id).eq("tenant_id", platformCompany.tenant_id),
+        db.from("platform_tenants").update({ status: "active", active: true, onboarding_stage: "ready", updated_at: now }).eq("id", platformCompany.tenant_id),
+      ]);
+      const activationError = controlCompany.error || unifiedCompany.error || tenantUpdate.error;
+      if (activationError) throw activationError;
+      await writePlatformAudit(db, admin, request, { action, entityType: "company", entityId: platformCompany.id, summary: `Activated staff login for ${platformCompany.name}`, metadata: { tenantId: platformCompany.tenant_id, appCompanyId: platformCompany.app_company_id } });
+      return NextResponse.json({ success: true });
+    }
+
     if (action === "updateCompany") {
       const companyId = String(body.companyId || "");
       const { data: currentCompany, error: currentCompanyError } = await db.from("platform_companies").select("id,tenant_id,app_company_id,status,database_status,connection_key").eq("id", companyId).single();
@@ -452,6 +499,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ error: "Unsupported platform action" }, { status: 400 });
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Platform action failed" }, { status: 500 });
+    return NextResponse.json({ error: platformErrorMessage(error) }, { status: 500 });
   }
 }

@@ -17,19 +17,26 @@ to the shared business database. Point the three `UNIFIED_SUPABASE_*` variables
 to that HAE project only after applying the unified migrations and taking a
 verified backup. No accounting rows need to be moved for this approach.
 
-## Onboard a client
+## Onboard a client (staff checklist)
 
-1. Open Kritech Control and select **New client**.
-2. Enter the client/group name, unique subdomain, contact and subscription.
-3. Add one or more companies under that client.
-4. In **Companies**, click **Provision**. This creates the isolated business
-   company, chart of accounts, office cash account and current Nepali fiscal year.
-5. Click **Users** and create the first company administrator. The first active
-   user is forced to the `admin` role and receives a one-time password setup link.
-6. Add manager, accountant and staff users as required. The tenant subscription
-   user limit is enforced across its companies.
-7. Confirm the Cloudflare DNS record for the client subdomain, test login, then
-   set the client onboarding stage to **Ready**.
+1. Open **Kritech Control → Clients → New client**. Enter the group name,
+   subdomain and primary contact. The system creates a Starter subscription.
+2. Open **Subscription** only when company/user limits or modules must change.
+3. Select **Add company** on the client. Company creation automatically attempts
+   to provision its isolated shared-database workspace.
+4. Open **Companies** and follow the single numbered button shown for that row:
+   **1 · Provision workspace**, **2 · Add first admin**, or **3 · Activate login**.
+   Completed companies show **Ready**.
+5. The first active company user is always made Administrator and receives a
+   one-time password setup email. Additional manager, accountant and staff users
+   can then be added from **Manage users**.
+6. Add one proxied Cloudflare wildcard DNS record (`*`) for the platform root
+   domain. A new client subdomain then needs no code or database credential.
+7. Open the client subdomain, select the company and confirm administrator login.
+
+The screen intentionally hides project IDs, region and database credentials from
+operations staff. If setup fails, the exact database/API error is shown and the
+numbered action remains available for a safe retry.
 
 Company administrators can subsequently manage their own company users from the
 business dashboard. Kritech platform administrators can provision, invite,

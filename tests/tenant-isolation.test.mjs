@@ -56,8 +56,14 @@ test("platform onboarding provisions and scopes company users", async () => {
   assert.match(route, /eq\("organization_id", platformCompany\.tenant_id\)/);
   assert.match(route, /subscription has used all/);
   assert.match(route, /Every company must keep at least one active administrator/);
+  assert.match(route, /action === "activateCompany"/);
+  assert.match(route, /platformErrorMessage/);
+  assert.match(route, /Payroll Deductions Payable/);
   assert.match(page, /Add first company administrator/);
   assert.match(page, /Shared DB · company isolated/);
+  assert.match(page, /1 · Provision workspace/);
+  assert.match(page, /2 · Add first admin/);
+  assert.match(page, /3 · Activate login/);
   assert.doesNotMatch(page, /Supabase project ref/);
 });
 

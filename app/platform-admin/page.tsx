@@ -88,6 +88,8 @@ type Payload = {
   unifiedReady: boolean;
   unifiedError?: string;
   entitlementMigrationRequired?: boolean;
+  registryMigrationRequired?: boolean;
+  registryMigrationError?: string;
   rootDomain: string;
 };
 type Modal = {
@@ -328,6 +330,13 @@ export default function PlatformAdminPage() {
           {!data.unifiedReady && (
             <div className="pc-alert error">
               Shared company database is not ready: {data.unifiedError || "configure the UNIFIED_SUPABASE server variables"}. Company and user provisioning is paused.
+            </div>
+          )}
+          {data.registryMigrationRequired && (
+            <div className="pc-alert error pc-migration-alert">
+              <strong>One-time Control setup required</strong>
+              <span>Apply <code>202608270001_unified_entitlements.sql</code> to the Control Supabase project. Until then company provisioning, module access and activation cannot finish.</span>
+              {data.registryMigrationError && <small>{data.registryMigrationError}</small>}
             </div>
           )}
           {tab === "overview" && (
@@ -605,6 +614,9 @@ export default function PlatformAdminPage() {
                       const tenant = data.tenants.find(
                         (item) => item.id === company.tenant_id,
                       );
+                      const companyUsers = data.companyUsers.filter((user) => user.company_id === company.app_company_id && user.active);
+                      const hasAdmin = companyUsers.some((user) => user.role === "admin");
+                      const setupStep = !company.app_company_id ? 1 : !hasAdmin ? 2 : !company.login_enabled ? 3 : 4;
                       return (
                         <tr key={company.id}>
                           <td>
@@ -616,7 +628,7 @@ export default function PlatformAdminPage() {
                             {company.app_company_id ? <><Status value="ready" /><small>Shared DB · company isolated</small></> : <><Status value="pending" /><small>Provisioning required</small></>}
                           </td>
                           <td>
-                            <strong>{data.companyUsers.filter((user) => user.company_id === company.app_company_id && user.active).length}</strong>
+                            <strong>{companyUsers.length}</strong>
                             <small>active seats</small>
                           </td>
                           <td>
@@ -627,12 +639,15 @@ export default function PlatformAdminPage() {
                             </span>
                           </td>
                           <td>
-                            <Status value={company.status} />
+                            {setupStep === 4 ? <Status value="ready" /> : <span className="pc-setup-step">Setup {setupStep}/3</span>}
                           </td>
                           <td>
                           {canEdit && (
                             <div className="pc-row-actions">
-                              {!company.app_company_id ? <button disabled={busy || !data.unifiedReady} onClick={() => action({ action: "provisionCompany", companyId: company.id })}>Provision</button> : <button onClick={() => setModal({ type: "companyUser", tenant, company })}>Users</button>}
+                              {setupStep === 1 && <button disabled={busy || !data.unifiedReady || data.registryMigrationRequired} onClick={() => action({ action: "provisionCompany", companyId: company.id })}>1 · Provision workspace</button>}
+                              {setupStep === 2 && <button onClick={() => setModal({ type: "companyUser", tenant, company })}>2 · Add first admin</button>}
+                              {setupStep === 3 && <button disabled={busy} onClick={() => action({ action: "activateCompany", companyId: company.id })}>3 · Activate login</button>}
+                              {setupStep === 4 && <button onClick={() => setModal({ type: "companyUser", tenant, company })}>Manage users</button>}
                               <button onClick={() => setModal({ type: "company", tenant, company })}>Manage</button>
                             </div>
                           )}
