@@ -114,7 +114,7 @@ export default function Home() {
   const [members, setMembers] = useState<any[]>([]);
   const [moneyAccounts, setMoneyAccounts] = useState<any[]>([]);
   const [currentMember, setCurrentMember] = useState<any>(null);
-  const [company, setCompany] = useState<any>({ name: "Hamro Afno Enterprises" });
+  const [company, setCompany] = useState<any>({ name: "Company workspace" });
   const [totals, setTotals] = useState({
     sales: 0,
     received: 0,
@@ -138,6 +138,8 @@ export default function Home() {
   const [products, setProducts] = useState<any[]>([]);
   const [saleLines, setSaleLines] = useState<SaleLine[]>([emptySaleLine()]);
   const [taxPercent, setTaxPercent] = useState(13);
+  const [billCategory, setBillCategory] = useState("vat");
+  const [supplierBillNo, setSupplierBillNo] = useState("");
   const [discountPercent, setDiscountPercent] = useState(0);
   const [newPartyName, setNewPartyName] = useState("");
   const [entityName, setEntityName] = useState("");
@@ -226,7 +228,7 @@ export default function Home() {
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
     setProducts(data.products || []);
-    setCompany(data.company || { name: "Hamro Afno Enterprises" });
+    setCompany(data.company || { name: "Company workspace" });
     try { sessionStorage.setItem(`hae-snapshot-${data.fiscalYear?.id || "current"}`, JSON.stringify(data)); sessionStorage.setItem("hae-snapshot-current", JSON.stringify(data)); } catch {}
   }
   function clearReportCache(){invalidateClientCache("reports:");try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith("hae-report-"))sessionStorage.removeItem(key)}}catch{}}
@@ -338,6 +340,8 @@ export default function Home() {
           item_type: l.itemType || "finished_good",
         })),
         taxPercent,
+        billCategory,
+        supplierBillNo,
         discountPercent,
         productName: entityName,
         sku,
@@ -398,7 +402,7 @@ export default function Home() {
     setModal("sale");
     setFormParty(parties[0]?.name || "__new__");
     setSaleLines([emptySaleLine()]);
-    setDiscountPercent(0); setTaxPercent(13); setParticulars("");
+    setDiscountPercent(0); setTaxPercent(13); setBillCategory("vat"); setSupplierBillNo(""); setParticulars("");
     setNewPartyName("");
     setPlace(""); setPhone(""); setTaxNo("");
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
@@ -428,7 +432,7 @@ export default function Home() {
     if(kind==="expense"){setPaymentMode("Cash");setHandledBy(currentMember?.id||"");setMoneyAccountId(moneyAccounts.find((account)=>account.account_type==="office_cash")?.id||moneyAccounts[0]?.id||"")}
     if (kind === "purchase") {
       setSaleLines([emptySaleLine()]);
-      setDiscountPercent(0); setTaxPercent(13);
+      setDiscountPercent(0); setTaxPercent(13); setBillCategory("vat"); setSupplierBillNo("");
       setFormParty(parties[0]?.name || "__new__");
       setNewPartyName("");
       setPlace(""); setPhone(""); setTaxNo("");
@@ -503,7 +507,7 @@ export default function Home() {
   function editVoucher() {
     const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type))return;
     setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
-    if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setModal("sale");}
+    if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setBillCategory(detail.bill_category==="pan"?"non_vat":detail.bill_category==="unclassified"?(Number(detail.tax_amount)>0?"vat":"non_vat"):(detail.bill_category||"vat"));setSupplierBillNo(detail.supplier_bill_no||"");setModal("sale");}
     else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
     setVoucherDetail(null);
   }
@@ -558,10 +562,10 @@ export default function Home() {
     <main className="app-shell">
       <aside className={`sidebar ${sidebarOpen ? "mobile-open" : ""}`}>
         <div className="brand">
-          <img className="brand-logo" src="/hamro-afno-logo.jpeg" alt="Hamro Afno Enterprises logo" />
+          {company.logo_url && <img className="brand-logo" src={company.logo_url} alt={`${company.name} logo`} />}
           <div>
-            <strong>Hamro Afno</strong>
-            <span>ENTERPRISES</span>
+            <strong>{company.name}</strong>
+            <span>COMPANY WORKSPACE</span>
           </div>
           <button className="sidebar-close" aria-label="Close navigation" onClick={()=>setSidebarOpen(false)}>×</button>
         </div>
@@ -613,7 +617,7 @@ export default function Home() {
             >
               ☰
             </button>
-            <img className="company-logo" src="/hamro-afno-logo.jpeg" alt="" />
+            {company.logo_url && <img className="company-logo" src={company.logo_url} alt="" />}
             <div>
               <strong>{company.name}</strong>
               <small>FY {fiscalYear?.label_bs || "2083/84"} · NPR</small>
@@ -1002,9 +1006,9 @@ export default function Home() {
               </article>
             </section>
           ) : active === "Accounting" ? (
-            <AccountingOperationsWorkspace mode="accounting" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
+            <AccountingOperationsWorkspace mode="accounting" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { invalidateClientCache(); if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
           ) : active === "Manufacturing" ? (
-            <AccountingOperationsWorkspace mode="manufacturing" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
+            <AccountingOperationsWorkspace mode="manufacturing" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { invalidateClientCache(); if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
           ) : active === "Cash & Bank" ? (
             <FundsWorkspace fiscalYear={fiscalYear} onNotice={setNotice} />
           ) : active === "Orders" ? (
@@ -1246,7 +1250,7 @@ export default function Home() {
             {!detailLoading && (
               <div className="voucher-document">
                 <div className="voucher-company">
-                  <img src="/hamro-afno-logo.jpeg" alt="" />
+                  {company.logo_url && <img src={company.logo_url} alt="" />}
                   <div><strong>{company.name}</strong><span>Official accounting record</span></div>
                   <div className="voucher-status"><span>POSTED</span><small>{voucherDetail.voucher_date ? bsDate(voucherDetail.voucher_date) : ""}</small></div>
                 </div>
@@ -1386,6 +1390,8 @@ export default function Home() {
                 <div className="invoice-section-title full"><span>02</span><div><strong>Items & pricing</strong><small>Add products, quantity and rate. Scroll normally for totals.</small></div></div>
               )}
               {(modal === "sale" || modal === "purchase") && <label>Due date / payment term (BS)<BsDateInput value={dueDate} onChange={setDueDate}/></label>}
+              {(modal === "sale" || modal === "purchase") && <label>Bill type<select value={billCategory} onChange={event => { setBillCategory(event.target.value); setTaxPercent(event.target.value === "vat" ? 13 : 0); }}><option value="vat">VAT bill</option>{modal === "purchase" && <option value="pan">PAN bill (no VAT)</option>}<option value="non_vat">{modal === "sale" ? "Non-VAT bill" : "No VAT / no PAN bill"}</option></select></label>}
+              {modal === "purchase" && <label>Supplier's bill number<input value={supplierBillNo} onChange={event=>setSupplierBillNo(event.target.value)} placeholder="Number printed on supplier bill"/></label>}
               {modal === "sale" || modal === "purchase" ? (
                 <div className="invoice-builder full">
                   <div className="line-head">
@@ -1498,6 +1504,7 @@ export default function Home() {
                           min="0"
                           onWheel={wheelNumberInput}
                           value={taxPercent}
+                          disabled={billCategory !== "vat"}
                           onChange={(e) =>
                             setTaxPercent(Number(e.target.value))
                           }

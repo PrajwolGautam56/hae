@@ -30,8 +30,12 @@ verified backup. No accounting rows need to be moved for this approach.
 5. The first active company user is always made Administrator and receives a
    one-time password setup email. Additional manager, accountant and staff users
    can then be added from **Manage users**.
-6. Add one proxied Cloudflare wildcard DNS record (`*`) for the platform root
-   domain. A new client subdomain then needs no code or database credential.
+6. Open the **Domain setup** checklist on the client card. Add that hostname to
+   the **existing Vercel project → Settings → Domains**. Copy the DNS target
+   Vercel supplies into a Cloudflare CNAME record for the subdomain (for example,
+   name `ag` for `ag.kritechglobal.com`). Start DNS-only until Vercel verifies the
+   domain and certificate. Use the target shown by Vercel, not an assumed IP.
+   Cloudflare DNS alone does not register a hostname with the application host.
 7. Open the client subdomain, select the company and confirm administrator login.
 
 The screen intentionally hides project IDs, region and database credentials from
@@ -42,3 +46,36 @@ Company administrators can subsequently manage their own company users from the
 business dashboard. Kritech platform administrators can provision, invite,
 change roles or deactivate company users from Control. The final active company
 administrator cannot be removed or demoted.
+
+## Company logo and launch check
+
+Add or edit the company and upload its logo (PNG, JPEG or WebP, up to 500 KB).
+The selected company's branding is used in its workspace and invoice detail.
+Set the subscription's company limit, user limit and manufacturing module before
+handing over the account. Invite the first administrator, activate the company,
+then test its login, company selection and a report. Do not create sample financial
+transactions in a customer's live books as a test.
+
+Every company uses the same deployed application and shared business schema.
+There is **no new branch, deployment, Supabase project or set of tables per
+company**. Records are scoped by company and tenant membership, not just the
+subdomain. Never distribute the server-side Supabase secret to customers.
+
+Wildcard domains can reduce repeated DNS steps, but require both DNS and Vercel
+wildcard TLS/domain configuration. Ask the platform operator to configure this
+once; staff should use the per-domain checklist until it is verified.
+See [Vercel domain setup](https://vercel.com/docs/domains/working-with-domains/add-a-domain)
+and [wildcard domains with external DNS](https://vercel.com/kb/guide/wildcard-domain-without-vercel-nameservers).
+
+## Troubleshooting
+
+- DNS not found: check the exact subdomain and CNAME in Cloudflare.
+- Vercel domain/certificate error: verify that hostname in the existing project's Domains page.
+- Company absent: confirm the tenant's hostname and company assignment in Control.
+- Login unavailable: follow the company's numbered setup button and ensure an active administrator exists.
+- Email not delivered: verify the sending domain and a valid `Name <email@domain>` sender; do not repeatedly create duplicate users.
+
+Backups must cover both Control metadata and business data. Shared-project backup
+restores affect every customer: restore into a separate recovery project first,
+then recover only the affected company's rows with relationship checks. Schedule
+and test backups before relying on this as the only copy of the books.

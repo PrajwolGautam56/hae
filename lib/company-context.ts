@@ -8,6 +8,9 @@ type Db = NonNullable<ReturnType<typeof getSupabaseAdmin>>;
 export type BusinessCompany = {
   id: string;
   name: string;
+  logo_url?: string | null;
+  address?: string | null;
+  phone?: string | null;
   currency?: string;
   fiscal_year?: string;
   slug?: string | null;
@@ -16,8 +19,8 @@ export type BusinessCompany = {
   settings?: Record<string, unknown>;
 };
 
-const companyFields = "id,name,currency,fiscal_year,slug,organization_id,platform_company_id,settings";
-const legacyCompanyFields = "id,name,currency,fiscal_year";
+const companyFields = "id,name,logo_url,address,phone,currency,fiscal_year,slug,organization_id,platform_company_id,settings";
+const legacyCompanyFields = "id,name,logo_url,address,phone,currency,fiscal_year";
 
 function missingTenantColumns(message?: string) {
   return Boolean(message && /(slug|organization_id|platform_company_id|settings).*(does not exist|schema cache)/i.test(message));

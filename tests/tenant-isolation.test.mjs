@@ -57,7 +57,7 @@ test("platform onboarding provisions and scopes company users", async () => {
   assert.match(route, /subscription has used all/);
   assert.match(route, /Every company must keep at least one active administrator/);
   assert.match(route, /action === "activateCompany"/);
-  assert.match(route, /onboarding_stage: "activation"/);
+  assert.match(route, /onboarding_stage: "domain"/);
   assert.match(route, /platformErrorMessage/);
   assert.match(route, /Payroll Deductions Payable/);
   assert.match(page, /Add first company administrator/);
@@ -79,8 +79,8 @@ test("embedded business reads disambiguate tenant-safe foreign keys", async () =
   ]);
   assert.match(accounting, /parties!vouchers_company_party_fkey/);
   assert.match(accounting, /money_accounts!vouchers_company_money_account_fkey/);
-  assert.match(reports, /ledger_entries!ledger_company_voucher_fkey/);
-  assert.match(reports, /journal_entries!journal_line_company_entry_fkey/);
+  assert.match(await source("lib/connected-reports.ts"), /vouchers!ledger_company_voucher_fkey/);
+  assert.match(await source("lib/financial-reports.ts"), /journal_entries!journal_line_company_entry_fkey/);
   assert.match(cheques, /parties!vouchers_company_party_fkey/);
   assert.match(funds, /parties!movement_company_party_fkey/);
   assert.match(crm, /team_members!leads_company_assignee_fkey/);
@@ -121,7 +121,7 @@ test("report center includes financial, ageing, tax and stock controls", async (
     assert.match(route, new RegExp(report));
     assert.match(workspace, new RegExp(report));
   }
-  assert.match(route, /allocation: "FIFO"/);
+  assert.match(await source("lib/connected-reports.ts"), /allocation:\s*"Net party FIFO"/);
   assert.match(workspace, /0–30 DAYS/);
   assert.match(workspace, /ABOVE 90 DAYS/);
 });

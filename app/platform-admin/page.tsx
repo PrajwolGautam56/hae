@@ -85,6 +85,8 @@ type Payload = {
   audits: Audit[];
   entitlements: Entitlement[];
   companyUsers: CompanyUser[];
+  companyBranding: {id:string;logo_url:string|null}[];
+  dnsTarget?: string | null;
   unifiedReady: boolean;
   unifiedError?: string;
   entitlementMigrationRequired?: boolean;
@@ -549,6 +551,7 @@ export default function PlatformAdminPage() {
                             "Contact information pending"}
                         </span>
                       </div>
+                      <details style={{margin:"16px 0",overflowWrap:"anywhere"}}><summary>Domain setup · staff checklist</summary><ol><li>Add <strong>{tenant.primary_domain}</strong> to the existing app in <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel → Settings → Domains</a>.</li><li>In <a href="https://dash.cloudflare.com/" target="_blank" rel="noreferrer">Cloudflare → DNS</a>, add a CNAME for this subdomain. Copy the exact target provided by Vercel{data.dnsTarget?` (configured platform target: ${data.dnsTarget})`:""}. Use DNS-only until verification completes.</li><li>Wait for Vercel to verify the domain and HTTPS certificate, then open the client link above and test the first administrator login.</li></ol><p>No new deployment, branch, database project or tables are needed. A DNS record alone does not activate a Vercel hostname.</p></details>
                       {canEdit && <div className="pc-card-actions">
                         <button
                           onClick={() => setModal({ type: "tenant", tenant })}
@@ -826,6 +829,8 @@ function Editor({
 }) {
   const tenant = modal.tenant;
   const company = modal.company;
+  const [logoData,setLogoData]=useState<string|undefined>(undefined);
+  const [logoError,setLogoError]=useState("");
   const subscription = data.subscriptions.find(
     (item) => item.tenant_id === tenant?.id,
   );
@@ -947,6 +952,7 @@ function Editor({
             void submit({
               action: company ? "updateCompany" : "createCompany",
               companyId: company?.id,
+              logoData,
               tenantId: tenant?.id,
               ...form,
               loginEnabled:
@@ -964,6 +970,11 @@ function Editor({
           <div className="pc-form">
             <Field label="Company name">
               <input name="name" required defaultValue={company?.name} />
+            </Field>
+            <Field label="Company logo (PNG, JPEG, WebP · max 500 KB)" wide>
+              <input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{const file=event.target.files?.[0];setLogoError("");if(!file)return;if(file.size>500*1024||!["image/png","image/jpeg","image/webp"].includes(file.type)){setLogoError("Choose a PNG, JPEG or WebP image below 500 KB");return;}const reader=new FileReader();reader.onload=()=>setLogoData(String(reader.result));reader.readAsDataURL(file);}}/>
+              {(logoData||data.companyBranding?.find(b=>b.id===company?.app_company_id)?.logo_url)&&<img src={logoData||data.companyBranding.find(b=>b.id===company?.app_company_id)!.logo_url!} alt="Company logo preview" style={{maxWidth:160,maxHeight:100,objectFit:"contain"}}/>}
+              {logoError&&<small role="alert">{logoError}</small>}
             </Field>
             <Field label="Registry slug">
               <input

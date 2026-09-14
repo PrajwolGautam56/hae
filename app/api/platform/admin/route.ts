@@ -15,6 +15,14 @@ const adminRoles = ["super_admin", "operator", "support", "viewer"];
 const companyRoles = ["admin", "manager", "accountant", "staff"];
 const featureKeys = ["accounting", "sales", "purchases", "inventory", "manufacturing", "crm", "tasks", "orders", "customer_portal", "cash_bank", "cheques", "reports"];
 
+function validatedLogo(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  const logo=String(value);
+  if (!logo) return "";
+  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(logo) || logo.length>700_000) throw new Error("Upload a PNG, JPEG or WebP logo smaller than 500 KB");
+  return logo;
+}
+
 function cleanSlug(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
@@ -130,9 +138,13 @@ export async function GET(request: Request) {
     if (firstError) throw firstError;
     const unified = getUnifiedAdmin();
     let companyUsers: Array<Record<string, unknown>> = [];
+    let companyBranding: Array<Record<string, unknown>> = [];
     let unifiedError = "";
     const appCompanyIds = (companies.data || []).map((company) => company.app_company_id).filter(Boolean) as string[];
     if (unified && appCompanyIds.length) {
+      const branding = await unified.from("companies").select("id,logo_url,address,phone").in("id",appCompanyIds);
+      if (branding.error) throw branding.error;
+      companyBranding=branding.data || [];
       const users = await unified.from("team_members").select("id,company_id,name,email,phone,role,active,auth_user_id,created_at").in("company_id", appCompanyIds).order("created_at");
       if (users.error) unifiedError = users.error.message;
       else companyUsers = users.data || [];
@@ -149,6 +161,8 @@ export async function GET(request: Request) {
       audits: audits.data || [],
       entitlements: entitlements.data || [],
       companyUsers,
+      companyBranding,
+      dnsTarget: process.env.PLATFORM_CNAME_TARGET || null,
       unifiedReady: Boolean(unified) && !unifiedError,
       unifiedError,
       entitlementMigrationRequired: Boolean(entitlements.error),
@@ -226,6 +240,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "createCompany") {
+      const logo=validatedLogo(body.logoData);
       const tenantId = String(body.tenantId || "");
       const name = String(body.name || "").trim();
       const slug = cleanSlug(body.slug);
@@ -250,6 +265,7 @@ export async function POST(request: Request) {
       if (error) throw error;
       const appCompanyId = await provisionUnifiedCompany(db, tenantId, data);
       if (appCompanyId) {
+        if (logo !== undefined) { const saved=await getUnifiedAdmin()!.from("companies").update({logo_url:logo||null}).eq("id",appCompanyId).eq("organization_id",tenantId); if(saved.error)throw saved.error; }
         const { error: linkError } = await db.from("platform_companies").update({ app_company_id: appCompanyId, database_status: "ready", status: "active", updated_at: new Date().toISOString() }).eq("id", data.id);
         if (linkError) throw new Error(`Company was provisioned but Control could not link it. Apply the Control entitlement migration. ${linkError.message}`);
       }
@@ -321,7 +337,7 @@ export async function POST(request: Request) {
       await sendTeamEmail({ to: email, subject: `Your ${platformCompany.name} account`, heading: "Your company account is ready", message: `Hi ${name}, you have been added to ${platformCompany.name} as ${role}. Use the secure link below to choose your password.`, actionLabel: "Set password", actionUrl: redirect.toString(), brandName: platformCompany.name, footer: `${tenant.name} · Powered by Kritech Global` });
       if (role === "admin") {
         const { error: stageError } = await db.from("platform_tenants")
-          .update({ onboarding_stage: "activation", updated_at: new Date().toISOString() })
+          .update({ onboarding_stage: "domain", updated_at: new Date().toISOString() })
           .eq("id", platformCompany.tenant_id);
         if (stageError) throw stageError;
       }
@@ -396,6 +412,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "updateCompany") {
+      const logo=validatedLogo(body.logoData);
       const companyId = String(body.companyId || "");
       const { data: currentCompany, error: currentCompanyError } = await db.from("platform_companies").select("id,tenant_id,app_company_id,status,database_status,connection_key").eq("id", companyId).single();
       if (currentCompanyError) throw currentCompanyError;
@@ -427,7 +444,8 @@ export async function POST(request: Request) {
         if (unified) {
           const { error: mirrorError } = await unified.from("platform_companies").update({ name: String(body.name || "").trim(), legal_name: textOrNull(body.legalName), status, login_enabled: loginEnabled, database_status: databaseStatus, portal_enabled: Boolean(body.portalEnabled), updated_at: new Date().toISOString() }).eq("id", companyId).eq("tenant_id", currentCompany.tenant_id);
           if (mirrorError) throw mirrorError;
-          await unified.from("companies").update({ name: String(body.name || "").trim(), active: status === "active" }).eq("id", currentCompany.app_company_id).eq("organization_id", currentCompany.tenant_id);
+          const businessUpdate=await unified.from("companies").update({ name: String(body.name || "").trim(), active: status === "active", ...(logo!==undefined?{logo_url:logo||null}:{}) }).eq("id", currentCompany.app_company_id).eq("organization_id", currentCompany.tenant_id);
+          if(businessUpdate.error)throw businessUpdate.error;
         }
       }
       await writePlatformAudit(db, admin, request, { action, entityType: "company", entityId: data.id, summary: `Updated company ${data.name}`, metadata: { status, databaseStatus, loginEnabled } });

@@ -11,7 +11,7 @@ type Props = {
   onNotice: (message: string) => void; onRefresh: () => void;
 };
 
-type ItemLine = { product_id: string; name: string; quantity: number; rate: number; unit: string; item_type: string };
+type ItemLine = { source_line_id?: string; product_id: string; name: string; quantity: number; rate: number; unit: string; item_type: string };
 type JournalLine = { account_id: string; party_id: string; description: string; debit: number; credit: number };
 type StockLine = { product_id: string; quantity_delta: number; unit_cost: number; reason: string };
 type BomLine = { product_id: string; quantity: number; wastage_percent: number; notes: string };
@@ -105,7 +105,7 @@ export default function AccountingOperationsWorkspace({ mode, parties, products,
     setSourceVoucherId(value);
     const voucher = sourceInvoices.find((row: any) => row.id === value);
     setPartyId(voucher?.party?.id || "");
-    setLines((voucher?.voucher_lines || []).map((line: any) => ({ product_id: line.product_id, name: line.description,
+    setLines((voucher?.voucher_lines || []).map((line: any) => ({ source_line_id: line.id, product_id: line.product_id, name: line.description,
       quantity: 0, rate: Number(line.rate), unit: line.products?.unit || "pcs", item_type: "finished_good" })));
   }
 
@@ -121,7 +121,7 @@ export default function AccountingOperationsWorkspace({ mode, parties, products,
     if (action === "purchase_order") Object.assign(body, { supplierId: partyId, expectedDate: expectedDate || null, supplierReference,
       discountPercent, taxPercent, lines: lines.filter((line) => line.name && line.quantity > 0).map((line) => ({ ...line })) });
     if (["sale_return", "purchase_return"].includes(action)) Object.assign(body, { action: "goods_return", returnType: action, sourceVoucherId,
-      lines: lines.filter((line) => line.product_id && line.quantity > 0).map((line) => ({ ...line })) });
+      lines: lines.filter((line) => line.source_line_id && line.quantity > 0).map((line) => ({ ...line })) });
     if (action === "manual_journal") body.lines = journalLines.filter((line) => line.account_id && (Number(line.debit) > 0 || Number(line.credit) > 0));
     if (action === "contra") Object.assign(body, { fromAccountId, toAccountId, amount: Number(amount) });
     if (action === "stock_adjustment") body.lines = stockLines.filter((line) => line.product_id && Number(line.quantity_delta) !== 0);

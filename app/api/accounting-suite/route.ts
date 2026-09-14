@@ -51,7 +51,7 @@ async function suiteSnapshot(fiscalYearId?: string) {
     db.from("voucher_sequences").select("voucher_type,last_number").eq("fiscal_year_id", fiscalYear.id),
     db.from("vouchers")
       .select("id,voucher_no,sequence_no,voucher_type,voucher_date,total,party:parties!vouchers_company_party_fkey(id,name),voucher_lines(id,product_id,description,quantity,rate,amount,products(name,sku,unit,stock_qty))")
-      .eq("company_id", company.id).eq("fiscal_year_id", fiscalYear.id).in("voucher_type", ["sale", "purchase"])
+      .eq("company_id", company.id).lte("voucher_date", fiscalYear.end_ad).in("voucher_type", ["sale", "purchase"])
       .order("voucher_date", { ascending: false }).order("created_at", { ascending: false }).limit(200),
     db.from("payroll_runs")
       .select("id,run_no,sequence_no,period_label,pay_date,gross_amount,deduction_amount,net_amount,status,notes,payroll_lines(id,basic_salary,allowances,deductions,net_amount,notes,team_members(name,role))")
@@ -74,7 +74,7 @@ export async function GET(request: Request) {
     await requireFeature("accounting");
     return NextResponse.json(await suiteSnapshot(new URL(request.url).searchParams.get("fy") || undefined));
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Accounting suite could not load" }, { status: 500 });
+    return NextResponse.json({ error: (error as {message?:string})?.message || "Accounting suite could not load" }, { status: 500 });
   }
 }
 
@@ -171,7 +171,7 @@ export async function POST(request: Request) {
     if (result.error) throw result.error;
     return NextResponse.json({ result: result.data, snapshot: await suiteSnapshot(fiscalYear.id) }, { status: 201 });
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Accounting operation failed" }, { status: 500 });
+    return NextResponse.json({ error: (error as {message?:string})?.message || "Accounting operation failed" }, { status: 500 });
   }
 }
 
