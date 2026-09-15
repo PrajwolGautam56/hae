@@ -186,21 +186,27 @@ export default function PlatformAdminPage() {
     setBusy(true);
     setError("");
     setNotice("");
-    const response = await fetch("/api/platform/admin", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const body = await response.json();
-    setBusy(false);
-    if (!response.ok) {
-      setError(body.error || "Action failed");
+    try {
+      const response = await fetch("/api/platform/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setError(body.error || "Action failed");
+        return false;
+      }
+      setNotice("Saved successfully");
+      setModal(null);
+      await load();
+      return true;
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "The request could not complete. Please try again.");
       return false;
+    } finally {
+      setBusy(false);
     }
-    setNotice("Saved successfully");
-    setModal(null);
-    await load();
-    return true;
   }
   async function logout() {
     await fetch("/api/platform/auth/logout", { method: "POST" });
@@ -806,6 +812,7 @@ export default function PlatformAdminPage() {
           modal={modal}
           data={data}
           busy={busy}
+          error={error}
           close={() => setModal(null)}
           submit={action}
         />
@@ -818,12 +825,14 @@ function Editor({
   modal,
   data,
   busy,
+  error,
   close,
   submit,
 }: {
   modal: Exclude<Modal, null>;
   data: Payload;
   busy: boolean;
+  error: string;
   close: () => void;
   submit: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
@@ -932,6 +941,7 @@ function Editor({
             </Field>
           </div>
           <ModalActions
+            error={error}
             busy={busy}
             close={close}
             label={tenant ? "Save client" : "Create client"}
@@ -1032,6 +1042,7 @@ function Editor({
             </Field>
           </div>
           <ModalActions
+            error={error}
             busy={busy}
             close={close}
             label={company ? "Save company" : "Add company"}
@@ -1043,7 +1054,7 @@ function Editor({
     const users = data.companyUsers.filter((user) => user.company_id === company?.app_company_id);
     const tenantCompanyIds = data.companies.filter((item) => item.tenant_id === tenant?.id).map((item) => item.app_company_id).filter(Boolean);
     const usedSeats = data.companyUsers.filter((user) => user.active && tenantCompanyIds.includes(user.company_id)).length;
-    const firstUser = users.length === 0;
+    const firstUser = !users.some(user => user.active);
     return (
       <div className="pc-modal-bg" onMouseDown={(event) => event.target === event.currentTarget && close()}>
         <form className="pc-modal" onSubmit={(event) => {
@@ -1070,11 +1081,11 @@ function Editor({
                 <Field label="Full name"><input name="name" required /></Field>
                 <Field label="Email address"><input name="email" type="email" required /></Field>
                 <Field label="Phone (optional)"><input name="phone" /></Field>
-                <Field label="Company role"><select name="role" defaultValue={firstUser ? "admin" : "staff"}><option value="admin">Administrator</option><option value="manager">Manager</option><option value="accountant">Accountant</option><option value="staff">Staff</option></select></Field>
+                <Field label="Company role"><select name="role" disabled={firstUser || busy} defaultValue={firstUser ? "admin" : "staff"}><option value="admin">Administrator</option><option value="manager">Manager</option><option value="accountant">Accountant</option><option value="staff">Staff</option></select></Field>
               </div>
             </section>
           </div>
-          <ModalActions busy={busy} close={close} label={firstUser ? "Create admin & send invite" : "Add user & send invite"} />
+          <ModalActions error={error} busy={busy} close={close} label={firstUser ? "Create admin & send invite" : "Add user & send invite"} />
         </form>
       </div>
     );
@@ -1179,7 +1190,7 @@ function Editor({
               {data.entitlementMigrationRequired && <small>Apply the Control entitlement migration before saving module access.</small>}
             </div>
           </div>
-          <ModalActions busy={busy} close={close} label="Save subscription" />
+          <ModalActions error={error} busy={busy} close={close} label="Save subscription" />
         </form>
       </div>
     );
@@ -1213,7 +1224,7 @@ function Editor({
             </select>
           </Field>
         </div>
-        <ModalActions busy={busy} close={close} label="Send invitation" />
+        <ModalActions error={error} busy={busy} close={close} label="Send invitation" />
       </form>
     </div>
   );
@@ -1241,22 +1252,27 @@ function ModalHead({
   );
 }
 function ModalActions({
+  error,
   busy,
   close,
   label,
 }: {
+  error: string;
   busy: boolean;
   close: () => void;
   label: string;
 }) {
   return (
-    <div className="pc-modal-actions">
-      <button type="button" onClick={close}>
-        Cancel
-      </button>
-      <button className="pc-button primary" disabled={busy}>
-        {busy ? "Saving…" : label}
-      </button>
-    </div>
+    <>
+      {error && <p role="alert" style={{ margin: "0 24px 12px", color: "#b42318", overflowWrap: "anywhere" }}>{error}</p>}
+      <div className="pc-modal-actions">
+        <button type="button" onClick={close}>
+          Cancel
+        </button>
+        <button className="pc-button primary" disabled={busy}>
+          {busy ? "Saving…" : label}
+        </button>
+      </div>
+    </>
   );
 }

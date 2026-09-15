@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { authorizePlatformAdmin, canManage, canManageAdmins, writePlatformAudit } from "../../../../lib/platform-admin";
 import { sendTeamEmail } from "../../../../lib/resend-email";
 import { getUnifiedAdmin } from "../../../../lib/supabase-server";
+import { createTemporaryPassword } from "../../../../lib/temporary-password";
 
 export const dynamic = "force-dynamic";
 
@@ -317,7 +318,7 @@ export async function POST(request: Request) {
       let authUser = await authUserByEmail(unified, email);
       let createdAuth = false;
       if (!authUser) {
-        const temporaryPassword = `${crypto.randomUUID()}Aa1!${crypto.randomUUID()}`;
+        const temporaryPassword = createTemporaryPassword();
         const { data: created, error: authError } = await unified.auth.admin.createUser({ email, password: temporaryPassword, email_confirm: true, user_metadata: { name } });
         if (authError) throw authError;
         authUser = created.user;
@@ -485,7 +486,7 @@ export async function POST(request: Request) {
       const email = String(body.email || "").trim().toLowerCase();
       const role = adminRoles.includes(body.role) ? body.role : "viewer";
       if (!name || !email) return NextResponse.json({ error: "Name and email are required" }, { status: 400 });
-      const temporaryPassword = `${crypto.randomUUID()}Aa1!${crypto.randomUUID()}`;
+      const temporaryPassword = createTemporaryPassword();
       const { data: auth, error: authError } = await db.auth.admin.createUser({ email, password: temporaryPassword, email_confirm: true, user_metadata: { name, platform_role: role } });
       if (authError) throw authError;
       const { data: created, error } = await db.from("platform_admins").insert({ auth_user_id: auth.user.id, name, email, role, active: true }).select("id,name,email").single();

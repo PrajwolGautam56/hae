@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "../../../../lib/supabase-server";
 import { sendTeamEmail } from "../../../../lib/resend-email";
 import { getSelectedBusinessCompany } from "../../../../lib/company-context";
 import { companiesForHost } from "../../../../lib/platform-control";
+import { createTemporaryPassword } from "../../../../lib/temporary-password";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
       const userLimit = registry?.subscription?.userLimit || 10;
       if ((activeUsers || 0) >= userLimit) return NextResponse.json({ error: `This subscription allows ${userLimit} active users. Increase the user limit in Kritech Control first.` }, { status: 409 });
       const suppliedPassword=String(body.password||"");if(suppliedPassword&&suppliedPassword.length<8)return NextResponse.json({error:"Initial password must be at least 8 characters"},{status:400});
-      const temporaryPassword = suppliedPassword || `${crypto.randomUUID()}Aa1!${crypto.randomUUID()}`;
+      const temporaryPassword = suppliedPassword || createTemporaryPassword();
       let authUser = await authUserByEmail(db, email);
       let createdAuth = false;
       if (!authUser) {

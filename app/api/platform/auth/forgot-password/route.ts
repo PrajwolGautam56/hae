@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getControlAdmin } from "../../../../../lib/platform-control";
 import { sendTeamEmail } from "../../../../../lib/resend-email";
+import { createTemporaryPassword } from "../../../../../lib/temporary-password";
 
 const generic = "If this email is an authorized platform account, a secure setup or reset link has been sent.";
 
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
     if (!admin?.active) return NextResponse.json({ message: generic });
 
     if (!admin.auth_user_id) {
-      const temporaryPassword = `${crypto.randomUUID()}Aa1!${crypto.randomUUID()}`;
+      const temporaryPassword = createTemporaryPassword();
       const { data: created, error: createError } = await db.auth.admin.createUser({ email, password: temporaryPassword, email_confirm: true, user_metadata: { name: admin.name, platform_role: true } });
       if (createError && !createError.message.toLowerCase().includes("already")) throw createError;
       if (created.user) await db.from("platform_admins").update({ auth_user_id: created.user.id, updated_at: new Date().toISOString() }).eq("id", admin.id);
