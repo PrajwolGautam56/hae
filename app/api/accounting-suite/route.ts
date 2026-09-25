@@ -4,6 +4,7 @@ import { getBusinessContext } from "../../../lib/company-context";
 import { getCurrentMember } from "../../../lib/current-member";
 import { requireFeature } from "../../../lib/feature-access";
 import { assertCompanyRecord, assertCompanyRecords } from "../../../lib/company-ownership";
+import { loadSuiteVouchers } from "../../../lib/suite-vouchers";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +44,7 @@ async function suiteSnapshot(fiscalYearId?: string) {
       .order("production_date", { ascending: false }).limit(50),
     db.from("accounts").select("id,code,name,account_type,normal_side,system_key,active")
       .eq("company_id", company.id).eq("active", true).order("code"),
-    db.from("vouchers")
-      .select("id,voucher_no,sequence_no,voucher_type,voucher_date,narration,total,source_voucher_id,source_order_id,document_status,party:parties!vouchers_company_party_fkey(id,name),source:vouchers!vouchers_company_source_voucher_fkey(voucher_no,voucher_type)")
-      .eq("company_id", company.id).eq("fiscal_year_id", fiscalYear.id)
-      .in("voucher_type", ["sale_return", "purchase_return", "journal", "contra", "stock_adjustment", "payroll"])
-      .order("voucher_date", { ascending: false }).order("created_at", { ascending: false }).limit(100),
+    loadSuiteVouchers(db, company.id, fiscalYear.id),
     db.from("voucher_sequences").select("voucher_type,last_number").eq("fiscal_year_id", fiscalYear.id),
     db.from("vouchers")
       .select("id,voucher_no,sequence_no,voucher_type,voucher_date,total,party:parties!vouchers_company_party_fkey(id,name),voucher_lines(id,product_id,description,quantity,rate,amount,products(name,sku,unit,stock_qty))")
@@ -57,13 +54,13 @@ async function suiteSnapshot(fiscalYearId?: string) {
       .select("id,run_no,sequence_no,period_label,pay_date,gross_amount,deduction_amount,net_amount,status,notes,payroll_lines(id,basic_salary,allowances,deductions,net_amount,notes,team_members(name,role))")
       .eq("company_id", company.id).eq("fiscal_year_id", fiscalYear.id).order("pay_date", { ascending: false }).limit(50),
   ]);
-  const error = ordersResult.error || bomsResult.error || batchesResult.error || accountsResult.error || vouchersResult.error || sequencesResult.error || sourceInvoicesResult.error || payrollResult.error;
+  const error = ordersResult.error || bomsResult.error || batchesResult.error || accountsResult.error || sequencesResult.error || sourceInvoicesResult.error || payrollResult.error;
   if (error) throw error;
   return {
     company, fiscalYear, currentMember: member,
     purchaseOrders: ordersResult.data || [], boms: bomsResult.data || [],
     productionBatches: batchesResult.data || [], accounts: accountsResult.data || [],
-    vouchers: vouchersResult.data || [], sourceInvoices: sourceInvoicesResult.data || [], payrollRuns: payrollResult.data || [],
+    vouchers: vouchersResult, sourceInvoices: sourceInvoicesResult.data || [], payrollRuns: payrollResult.data || [],
     nextNumbers: Object.fromEntries(["purchase_order", "sale_return", "purchase_return", "journal", "contra", "stock_adjustment"]
       .map((type) => [type, Number(sequencesResult.data?.find((row) => row.voucher_type === type)?.last_number || 0) + 1])),
   };
