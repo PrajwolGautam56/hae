@@ -13,3 +13,14 @@
 .amount-in-words strong { font-size:13px; line-height:1.5; }
 .toast { display:flex; align-items:center; gap:12px; max-width:min(440px,calc(100vw - 24px)); }
 .toast button { margin-left:auto; padding:2px 5px; border:0; background:transparent; color:inherit; font-size:20px; cursor:pointer; }
+.party-field { display:grid; gap:7px; min-width:0; }
+.party-field > label { color:#4b5a70; font-size:12px; font-weight:700; }
+.party-field > small { color:#526b93; }
+.party-combobox { position:relative; min-width:0; }
+.party-combobox > input { width:100%; }
+.party-options { position:absolute; z-index:12; top:calc(100% + 5px); left:0; right:0; max-height:260px; overflow-y:auto; overscroll-behavior:contain; padding:5px; border:1px solid #d8e2ef; border-radius:11px; background:#fff; box-shadow:0 16px 36px rgba(16,24,40,.16); }
+.party-options button { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:4px 10px; width:100%; min-height:40px; padding:9px 11px; border:0; border-radius:7px; background:#fff; color:#24364d; text-align:left; cursor:pointer; }
+.party-options button:hover,.party-options button.active { background:#edf4ff; color:#175cd3; }
+.party-options button small { color:#778599; }
+.party-options p { margin:8px 11px; color:#667085; font-size:12px; }
+.party-options .new-party-option { border-top:1px solid #edf0f4; color:#175cd3; font-weight:700; }

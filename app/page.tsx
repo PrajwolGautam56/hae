@@ -22,6 +22,7 @@ import "./invoice-entry.css";
 import { amountInWords } from "../lib/amount-in-words";
 import { voucherPrintHtml } from "../lib/voucher-print";
 import VoucherPrintPreview from "./voucher-print-preview";
+import { matchingParties } from "../lib/party-search";
 
 const nav = [
   "Overview",
@@ -121,6 +122,9 @@ export default function Home() {
   const [noticeVersion, setNoticeVersion] = useState(0);
   const [query, setQuery] = useState("");
   const [formParty, setFormParty] = useState("");
+  const [partySearch, setPartySearch] = useState("");
+  const [partyPickerOpen, setPartyPickerOpen] = useState(false);
+  const [partyActiveIndex, setPartyActiveIndex] = useState(-1);
   const [parties, setParties] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [monthlyPerformance, setMonthlyPerformance] = useState<OverviewMonth[]>([]);
@@ -147,7 +151,8 @@ export default function Home() {
   const [particulars, setParticulars] = useState("");
   const [saving, setSaving] = useState(false);
   const saveLock = useRef(false);
-  const salesPartyInput = useRef<HTMLSelectElement>(null);
+  const salesPartyInput = useRef<HTMLInputElement>(null);
+  const inlineNewPartyInput = useRef<HTMLInputElement>(null);
   const invoiceScroll = useRef<HTMLDivElement>(null);
   const [lastSavedSale, setLastSavedSale] = useState<string | null>(null);
   const [snapshotSync, setSnapshotSync] = useState<"idle" | "loading" | "failed">("idle");
@@ -210,6 +215,24 @@ export default function Home() {
     [parties, query],
   );
   const visibleNav = useMemo(() => nav.filter((item) => !navFeature[item] || entitlements[navFeature[item]] !== false), [entitlements]);
+  const partyMatches = useMemo(() => matchingParties(parties, partySearch), [parties, partySearch]);
+
+  function chooseExistingParty(name: string) {
+    setFormParty(name);
+    setPartySearch(name);
+    setNewPartyName("");
+    setPartyPickerOpen(false);
+    setPartyActiveIndex(-1);
+  }
+  function chooseNewParty() {
+    const typedName = partySearch.trim();
+    setNewPartyName(parties.some(party => party.name.toLocaleLowerCase() === typedName.toLocaleLowerCase()) ? "" : typedName);
+    setFormParty("__new__");
+    setPartySearch("");
+    setPartyPickerOpen(false);
+    setPartyActiveIndex(-1);
+    requestAnimationFrame(() => inlineNewPartyInput.current?.focus());
+  }
 
   useEffect(() => {
     setClientToday(localBusinessDate());
@@ -354,7 +377,7 @@ export default function Home() {
       (modal === "sale" || modal === "purchase") &&
       (!validLines.length || (!party && !newPartyName.trim()))
     ) {
-      setNotice("Please add a party and at least one valid product");
+      setNotice(partySearch.trim() && !party && !newPartyName.trim() ? "Choose a party from the search results or add it as a new party." : "Please add a party and at least one valid product");
       return;
     }
     if (
@@ -451,6 +474,8 @@ export default function Home() {
       const previewNumber = nextInvoicePreview(data.savedRecord?.sequence);
       if (previewNumber) setNextNumbers(current => ({ ...current, sale: previewNumber }));
       setFormParty("");
+      setPartySearch("");
+      setPartyPickerOpen(false);
       setDiscountPercent(0);
       setSupplierBillNo("");
       // Keep the selected date and VAT treatment for batch entry, but no customer/items/discount.
@@ -487,7 +512,9 @@ export default function Home() {
     setLastSavedSale(null);
     setEditingVoucherId("");
     setModal("sale");
-    setFormParty(parties[0]?.name || "__new__");
+    setFormParty("");
+    setPartySearch("");
+    setPartyPickerOpen(false);
     setSaleLines([emptySaleLine()]);
     setDiscountPercent(0); setTaxPercent(13); setBillCategory("vat"); setSupplierBillNo(""); setParticulars("");
     setNewPartyName("");
@@ -495,10 +522,12 @@ export default function Home() {
     setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
     setDueDate("");
   }
-  function openPayment() {
+  function openPayment(preselectedParty = "") {
     setEditingVoucherId("");
     setModal("payment");
-    setFormParty(parties[0]?.name || "__new__");
+    setFormParty(preselectedParty);
+    setPartySearch(preselectedParty);
+    setPartyPickerOpen(false);
     setNewPartyName(""); setAmount(""); setParticulars("");
     setPaymentMode("Cash"); setChequeNo(""); setChequeBank(""); setChequeExchangeDate("");
     const collectorId=currentMember?.id||members[0]?.id||"";setHandledBy(collectorId);
@@ -520,7 +549,9 @@ export default function Home() {
     if (kind === "purchase") {
       setSaleLines([emptySaleLine()]);
       setDiscountPercent(0); setTaxPercent(13); setBillCategory("vat"); setSupplierBillNo("");
-      setFormParty(parties[0]?.name || "__new__");
+      setFormParty("");
+      setPartySearch("");
+      setPartyPickerOpen(false);
       setNewPartyName("");
       setPlace(""); setPhone(""); setTaxNo("");
     }
@@ -597,7 +628,7 @@ export default function Home() {
   }
   function editVoucher() {
     const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type))return;
-    setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
+    setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setPartySearch(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
     if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setBillCategory(detail.bill_category==="pan"?"non_vat":detail.bill_category==="unclassified"?(Number(detail.tax_amount)>0?"vat":"non_vat"):(detail.bill_category||"vat"));setSupplierBillNo(detail.supplier_bill_no||"");setModal("sale");}
     else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
     setVoucherDetail(null);
@@ -823,7 +854,7 @@ export default function Home() {
                       </span>
                     </button>
                     <button
-                      onClick={openPayment}
+                      onClick={() => openPayment()}
                     >
                       <i className="qa-green"><NavIcon name="Payments" /></i>
                       <span>
@@ -944,8 +975,7 @@ export default function Home() {
                       <button
                         key={p.name}
                         onClick={() => {
-                          setFormParty(p.name);
-                          openPayment();
+                          openPayment(p.name);
                         }}
                       >
                         <span className={`avatar ${p.tone}`}>{p.initials}</span>
@@ -1122,7 +1152,7 @@ export default function Home() {
                 {active === "Payments" && (
                   <button
                     className="primary"
-                    onClick={openPayment}
+                    onClick={() => openPayment()}
                   >
                     ＋ Receive payment
                   </button>
@@ -1386,33 +1416,53 @@ export default function Home() {
                   {(modal === "sale" || modal === "purchase") && (
                     <div className="invoice-section-title full"><span>01</span><div><strong>{modal === "sale" ? "Customer details" : "Supplier details"}</strong><small>Select an existing party or create one instantly.</small></div></div>
                   )}
-                  <label className="full">
-                    {modal === "purchase"
-                      ? "Supplier / Party"
-                      : "Party / Customer"}
-                    <select
-                      ref={modal === "sale" ? salesPartyInput : undefined}
-                      value={formParty}
-                      onChange={(e) => {
-                        setFormParty(e.target.value);
-                        if (e.target.value !== "__new__") setNewPartyName("");
-                      }}
-                    >
-                      <option value="" disabled>Select a party / customer</option>
-                      {parties.map((p) => (
-                        <option key={p.name} value={p.name}>
-                          {p.name}
-                        </option>
-                      ))}
-                      <option value="__new__">
-                        ＋ Add new party instantly
-                      </option>
-                    </select>
-                  </label>
+                  <div className="party-field full">
+                    <label htmlFor="invoice-party-search">{modal === "purchase" ? "Supplier / Party" : "Party / Customer"}</label>
+                    <div className="party-combobox" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPartyPickerOpen(false); }}>
+                      <input
+                        id="invoice-party-search"
+                        ref={modal === "sale" ? salesPartyInput : undefined}
+                        role="combobox"
+                        aria-autocomplete="list"
+                        aria-expanded={partyPickerOpen}
+                        aria-controls="invoice-party-options"
+                        aria-activedescendant={partyPickerOpen && partyActiveIndex >= 0 ? `invoice-party-option-${partyActiveIndex}` : undefined}
+                        autoComplete="off"
+                        value={partySearch}
+                        placeholder={formParty === "__new__" ? "Creating a new party below" : "Type party name to search"}
+                        onFocus={() => { setPartyPickerOpen(true); setPartyActiveIndex(-1); }}
+                        onChange={event => { setPartySearch(event.target.value); setFormParty(""); setNewPartyName(""); setPartyActiveIndex(-1); setPartyPickerOpen(true); }}
+                        onKeyDown={event => {
+                          if (event.key === "ArrowDown") { event.preventDefault(); setPartyPickerOpen(true); setPartyActiveIndex(index => Math.min(index + 1, partyMatches.length)); }
+                          if (event.key === "ArrowUp") { event.preventDefault(); setPartyActiveIndex(index => Math.max(index - 1, -1)); }
+                          if (event.key === "Escape") { event.preventDefault(); setPartyPickerOpen(false); }
+                          if (event.key === "Enter" && partyPickerOpen) {
+                            const option = partyActiveIndex >= 0 ? partyActiveIndex : partyMatches.length === 1 && partySearch.trim() ? 0 : -1;
+                            if (option >= 0) { event.preventDefault(); if (option < partyMatches.length) chooseExistingParty(partyMatches[option].name); else chooseNewParty(); }
+                          }
+                        }}
+                      />
+                      {partyPickerOpen && <div id="invoice-party-options" className="party-options" role="listbox" aria-label="Matching parties">
+                        {partyMatches.map((party, index) => <button
+                          key={party.id || party.name}
+                          id={`invoice-party-option-${index}`}
+                          type="button"
+                          role="option"
+                          aria-selected={formParty === party.name}
+                          className={partyActiveIndex === index ? "active" : ""}
+                          onMouseDown={event => event.preventDefault()}
+                          onClick={() => chooseExistingParty(party.name)}
+                        ><strong>{party.name}</strong>{party.place && <small>{party.place}</small>}</button>)}
+                        {!partyMatches.length && <p>No existing party matches “{partySearch}”.</p>}
+                        <button id={`invoice-party-option-${partyMatches.length}`} type="button" role="option" aria-selected={formParty === "__new__"} className={`new-party-option ${partyActiveIndex === partyMatches.length ? "active" : ""}`} onMouseDown={event => event.preventDefault()} onClick={chooseNewParty}>＋ Add new party instantly</button>
+                      </div>}
+                    </div>
+                    {formParty === "__new__" && <small>New party selected. Enter its details below.</small>}
+                  </div>
                   {formParty === "__new__" && (
                     <div className="inline-party full">
                       <div className="inline-party-title"><strong>New party details</strong><span>Name is required; other details are optional.</span></div>
-                      <label>Party / company name<input autoFocus value={newPartyName} onChange={(e) => setNewPartyName(e.target.value)} placeholder="Required" /></label>
+                      <label>Party / company name<input ref={inlineNewPartyInput} autoFocus value={newPartyName} onChange={(e) => setNewPartyName(e.target.value)} placeholder="Required" /></label>
                       <label>Phone<input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Optional" /></label>
                       <label>Address<input value={place} onChange={(e) => setPlace(e.target.value)} placeholder="Optional" /></label>
                       <label>PAN Number<input value={taxNo} onChange={(e) => setTaxNo(e.target.value)} placeholder="Optional" /></label>
