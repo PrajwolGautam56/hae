@@ -23,6 +23,7 @@ import { amountInWords } from "../lib/amount-in-words";
 import { voucherPrintHtml } from "../lib/voucher-print";
 import VoucherPrintPreview from "./voucher-print-preview";
 import { matchingParties } from "../lib/party-search";
+import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
 const nav = [
   "Overview",
@@ -120,6 +121,10 @@ export default function Home() {
   >(null);
   const [notice, setNotice] = useState("");
   const [noticeVersion, setNoticeVersion] = useState(0);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [draftStored, setDraftStored] = useState(true);
+  const [resumeRequested, setResumeRequested] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
   const [query, setQuery] = useState("");
   const [formParty, setFormParty] = useState("");
   const [partySearch, setPartySearch] = useState("");
@@ -216,6 +221,16 @@ export default function Home() {
   );
   const visibleNav = useMemo(() => nav.filter((item) => !navFeature[item] || entitlements[navFeature[item]] !== false), [entitlements]);
   const partyMatches = useMemo(() => matchingParties(parties, partySearch), [parties, partySearch]);
+  function currentInvoiceDraft(): InvoiceDraft {
+    return { formParty, partySearch, newPartyName, place, phone, taxNo, transactionDate, dueDate, particulars, billCategory, taxPercent, discountPercent, supplierBillNo, saleLines };
+  }
+  useEffect(() => {
+    if (modal !== "sale" || editingVoucherId) return;
+    const key = invoiceDraftKey(company?.id, currentMember?.id, fiscalYear?.id);
+    if (!key) return;
+    const timer = window.setTimeout(() => saveInvoiceDraft(key, currentInvoiceDraft()), 300);
+    return () => window.clearTimeout(timer);
+  }, [modal, editingVoucherId, company?.id, currentMember?.id, fiscalYear?.id, formParty, partySearch, newPartyName, place, phone, taxNo, transactionDate, dueDate, particulars, billCategory, taxPercent, discountPercent, supplierBillNo, saleLines]);
 
   function chooseExistingParty(name: string) {
     setFormParty(name);
@@ -307,7 +322,7 @@ export default function Home() {
     const request = ++fiscalRequest.current;
     fetch("/api/accounting",{signal:controller.signal,cache:"no-store"})
       .then(async(r) => {const data=await r.json();if(!r.ok)throw new Error(data.error||"Database could not be loaded");return data})
-      .then(data => { if (request === fiscalRequest.current) applySnapshot(data); })
+      .then(data => { if (request === fiscalRequest.current) { applySnapshot(data); if (new URLSearchParams(window.location.search).get("resumeInvoice") === "1") setResumeRequested(true); } })
       .catch((error) => {if(error?.name!=="AbortError")setNotice(error instanceof Error?error.message:"Database could not be loaded")});
     return()=>controller.abort();
   }, []);
@@ -400,6 +415,8 @@ export default function Home() {
       if (!chequeBank.trim()) { setNotice("Please enter or select the bank name"); return; }
       if (!chequeExchangeDate) { setNotice("Please select the cheque exchange date"); return; }
     }
+    const draftKey = modal === "sale" && !editingVoucherId ? invoiceDraftKey(company?.id, currentMember?.id, fiscalYear?.id) : null;
+    const draftWasStored = draftKey ? saveInvoiceDraft(draftKey, currentInvoiceDraft()) : false;
     setSaving(true);
     const response = await fetch("/api/accounting", {
       method: editingVoucherId || editingProductId ? "PUT" : "POST",
@@ -457,9 +474,17 @@ export default function Home() {
     const data = await response.json();
     setSaving(false);
     if (!response.ok) {
-      setNotice(data.error || "Could not save");
+      if (response.status === 401 && modal === "sale") {
+        setSessionExpired(true);
+        setDraftStored(draftWasStored);
+        setNotice(draftWasStored ? "Your sign-in expired. The invoice draft is safe in this browser. Sign in again to continue." : "Your sign-in expired. Keep this tab open: browser draft storage is unavailable. Copy the invoice details before signing in again.");
+      } else setNotice(data.error || "Could not save");
       return;
     }
+    if (draftKey) clearInvoiceDraft(draftKey);
+    setSessionExpired(false);
+    setDraftStored(true);
+    setDraftRestored(false);
     clearReportCache();
     invalidateClientCache("cheques:");
     invalidateClientCache("funds:");
@@ -509,18 +534,36 @@ export default function Home() {
     void refreshChequeCounts();
   }
   function openSale() {
+    const key = invoiceDraftKey(company?.id, currentMember?.id, fiscalYear?.id);
+    const draft = key ? loadInvoiceDraft(key) : null;
     setLastSavedSale(null);
     setEditingVoucherId("");
     setModal("sale");
-    setFormParty("");
-    setPartySearch("");
+    setSessionExpired(false);
+    setDraftStored(true);
+    setDraftRestored(Boolean(draft));
+    setFormParty(draft?.formParty || "");
+    setPartySearch(draft?.partySearch || "");
     setPartyPickerOpen(false);
-    setSaleLines([emptySaleLine()]);
-    setDiscountPercent(0); setTaxPercent(13); setBillCategory("vat"); setSupplierBillNo(""); setParticulars("");
-    setNewPartyName("");
-    setPlace(""); setPhone(""); setTaxNo("");
-    setTransactionDate(today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today);
-    setDueDate("");
+    setSaleLines(draft?.saleLines?.length ? draft.saleLines : [emptySaleLine()]);
+    setDiscountPercent(draft?.discountPercent ?? 0); setTaxPercent(draft?.taxPercent ?? 13); setBillCategory(draft?.billCategory || "vat"); setSupplierBillNo(draft?.supplierBillNo || ""); setParticulars(draft?.particulars || "");
+    setNewPartyName(draft?.newPartyName || "");
+    setPlace(draft?.place || ""); setPhone(draft?.phone || ""); setTaxNo(draft?.taxNo || "");
+    setTransactionDate(draft?.transactionDate || (today >= fiscalYear?.start_ad && today <= fiscalYear?.end_ad ? today : fiscalYear?.end_ad || today));
+    setDueDate(draft?.dueDate || "");
+    if (draft) setNotice("Your unfinished invoice draft was restored from this browser. It has not been posted to the ledger.");
+  }
+  useEffect(() => {
+    if (!resumeRequested || !company?.id || !currentMember?.id || !fiscalYear?.id) return;
+    setResumeRequested(false);
+    setActive("Sales");
+    openSale();
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+  }, [resumeRequested, company?.id, currentMember?.id, fiscalYear?.id]);
+  function discardSaleDraft() {
+    const key = invoiceDraftKey(company?.id, currentMember?.id, fiscalYear?.id);
+    if (key) clearInvoiceDraft(key);
+    openSale();
   }
   function openPayment(preselectedParty = "") {
     setEditingVoucherId("");
@@ -1410,6 +1453,8 @@ export default function Home() {
               <button aria-label="Close invoice or receipt" disabled={saving} onClick={() => setModal(null)}>×</button>
             </div>
             <div className="form-grid" ref={invoiceScroll}>
+              {modal === "sale" && !editingVoucherId && sessionExpired && <div className="invoice-draft-alert full" role="alert"><strong>Sign-in expired; this invoice has not been saved.</strong><span>{draftStored ? "Your entries are preserved as a draft in this browser." : "Browser draft storage is unavailable. Keep this tab open and copy the invoice details before signing in."}</span>{draftStored ? <a href={`/login?company=${encodeURIComponent(company?.slug || "")}&next=${encodeURIComponent("/?resumeInvoice=1")}`}>Sign in again and resume</a> : <a target="_blank" rel="noopener noreferrer" href={`/login?company=${encodeURIComponent(company?.slug || "")}`}>Sign in in a new tab</a>}</div>}
+              {modal === "sale" && !editingVoucherId && draftRestored && !sessionExpired && <div className="invoice-draft-alert full" role="status"><span>Unfinished invoice restored from this browser. Check it before saving.</span><button type="button" onClick={discardSaleDraft}>Discard draft</button></div>}
               {modal === "sale" && !editingVoucherId && lastSavedSale !== null && <div className="snapshot-sync full" role="status"><span>Invoice{lastSavedSale ? ` #${lastSavedSale}` : ""} saved. {snapshotSync === "loading" ? "Enter the next bill while stock and numbering update…" : snapshotSync === "failed" ? "Refresh failed. Your saved bill is safe; retry the refresh before saving the next one." : "Ready for the next invoice."}</span>{snapshotSync === "failed" && <button onClick={() => { const pending = pendingRefresh.current; if (pending) void refreshSavedAccounting(pending.fiscalYearId, pending.label); }}>Retry refresh</button>}</div>}
               {modal !== "expense" && (
                 <>

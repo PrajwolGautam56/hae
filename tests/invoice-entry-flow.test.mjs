@@ -47,6 +47,7 @@ async function runSaveResponse({ type = 'sale', editing = '', ok = true } = {}) 
     continueSalesEntry, nextInvoicePreview,
     emptySaleLine: () => ({ name: '', quantity: 1, rate: 0 }),
     clearReportCache() {}, invalidateClientCache() {},
+    draftKey: null, clearInvoiceDraft() {},
     refreshSavedAccounting: async () => effects.push('refresh'),
     refreshChequeCounts: async () => {}, applySnapshot() {},
     requestAnimationFrame: callback => callback(),

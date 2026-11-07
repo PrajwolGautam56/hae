@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     const secure = process.env.NODE_ENV === "production";
     response.cookies.set("hae_access_token", data.session.access_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: data.session.expires_in });
     response.cookies.set("hae_refresh_token", data.session.refresh_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
-    response.cookies.set(COMPANY_COOKIE, selected.company.slug, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 12 });
+    response.cookies.set(COMPANY_COOKIE, selected.company.slug, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
     return response;
   } catch (error: unknown) { return NextResponse.json({ error: error instanceof Error ? error.message : "Could not sign in" }, { status: 500 }); }
 }

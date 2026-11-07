@@ -24,3 +24,6 @@
 .party-options button small { color:#778599; }
 .party-options p { margin:8px 11px; color:#667085; font-size:12px; }
 .party-options .new-party-option { border-top:1px solid #edf0f4; color:#175cd3; font-weight:700; }
+.invoice-draft-alert { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:12px; border:1px solid #f0cf95; border-radius:10px; background:#fff9ed; color:#704900; font-size:12px; }
+.invoice-draft-alert strong,.invoice-draft-alert span { flex-basis:100%; }
+.invoice-draft-alert a,.invoice-draft-alert button { display:inline-flex; align-items:center; min-height:32px; padding:5px 10px; border:1px solid #d89a35; border-radius:7px; background:#fff; color:#6c4300; font-weight:700; text-decoration:none; cursor:pointer; }

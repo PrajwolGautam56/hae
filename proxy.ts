@@ -49,7 +49,9 @@ function matches(path: string, entries: string[]) {
 }
 
 async function lookupIdentity(token: string, table: "team_members" | "parties", activeColumn: "active" | "portal_active", config: BusinessConfig, companySlug?: string, tenantSlug?: string) {
+  try {
   const validation = await fetch(`${config.url}/auth/v1/user`, { headers: { apikey: config.key, Authorization: `Bearer ${token}` }, cache: "no-store" });
+  if (validation.status === 429 || validation.status >= 500) return null;
   if (!validation.ok) return false;
   const user = await validation.json() as { id?: string };
   if (!user.id) return false;
@@ -58,12 +60,14 @@ async function lookupIdentity(token: string, table: "team_members" | "parties", 
     let organizationFilter = "";
     if (process.env.UNIFIED_SUPABASE_URL && tenantSlug) {
       const tenantResponse = await fetch(`${config.url}/rest/v1/platform_tenants?slug=eq.${encodeURIComponent(tenantSlug)}&active=eq.true&select=id&limit=1`, { headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` }, cache: "no-store" });
+      if (tenantResponse.status === 429 || tenantResponse.status >= 500) return null;
       if (!tenantResponse.ok) return false;
       const tenants = await tenantResponse.json() as Array<{ id: string }>;
       if (!tenants[0]?.id) return false;
       organizationFilter = `&organization_id=eq.${encodeURIComponent(tenants[0].id)}`;
     }
     const companyResponse = await fetch(`${config.url}/rest/v1/companies?slug=eq.${encodeURIComponent(companySlug)}${organizationFilter}&active=eq.true&select=id&limit=1`, { headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` }, cache: "no-store" });
+    if (companyResponse.status === 429 || companyResponse.status >= 500) return null;
     if (companyResponse.ok) {
       const companies = await companyResponse.json() as Array<{ id: string }>;
       if (!companies[0]?.id) return false;
@@ -74,7 +78,9 @@ async function lookupIdentity(token: string, table: "team_members" | "parties", 
     headers: { apikey: config.secret, Authorization: `Bearer ${config.secret}` },
     cache: "no-store",
   });
+  if (identity.status === 429 || identity.status >= 500) return null;
   return identity.ok && ((await identity.json()) as Array<{ id: string }>).length > 0;
+  } catch { return null; }
 }
 
 async function lookupPlatformIdentity(token: string, config: BusinessConfig) {
@@ -93,12 +99,49 @@ async function refreshSession(refreshToken: string, config: BusinessConfig) {
   return await response.json() as { access_token: string; refresh_token: string; expires_in: number };
 }
 
+async function refreshStaffSession(refreshToken: string, config: BusinessConfig): Promise<{ status: "ok"; session: { access_token: string; refresh_token: string; expires_in: number } } | { status: "expired" | "unavailable" }> {
+  try {
+    const response = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, { method: "POST", headers: { apikey: config.key, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token: refreshToken }), cache: "no-store" });
+    if (response.status === 429 || response.status >= 500) return { status: "unavailable" };
+    if (!response.ok) return { status: "expired" };
+    const session = await response.json() as { access_token?: string; refresh_token?: string; expires_in?: number };
+    if (!session.access_token || !session.refresh_token || !session.expires_in) return { status: "unavailable" };
+    return { status: "ok", session: { access_token: session.access_token, refresh_token: session.refresh_token, expires_in: session.expires_in } };
+  } catch { return { status: "unavailable" }; }
+}
+
+function continueWithStaffSession(request: NextRequest, session: { access_token: string; refresh_token: string; expires_in: number }, selectedCompany: string) {
+  request.cookies.set("hae_access_token", session.access_token);
+  request.cookies.set("hae_refresh_token", session.refresh_token);
+  const headers = new Headers(request.headers);
+  headers.set("cookie", request.cookies.toString());
+  const response = NextResponse.next({ request: { headers } });
+  return writeStaffCookies(response, session, selectedCompany);
+}
+
+function writeStaffCookies(response: NextResponse, session: { access_token: string; refresh_token: string; expires_in: number }, selectedCompany: string) {
+  const secure = process.env.NODE_ENV === "production";
+  response.cookies.set("hae_access_token", session.access_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: session.expires_in });
+  response.cookies.set("hae_refresh_token", session.refresh_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
+  response.cookies.set(COMPANY_COOKIE, selectedCompany, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
+  return response;
+}
+
+function staffAuthUnavailable(session?: { access_token: string; refresh_token: string; expires_in: number }, selectedCompany?: string) {
+  const response = NextResponse.json({ error: "Authentication service is temporarily unavailable. Your session was kept; please retry." }, { status: 503 });
+  return session && selectedCompany ? writeStaffCookies(response, session, selectedCompany) : response;
+}
+
 function continueWithClientSession(request: NextRequest, session: { access_token: string; refresh_token: string; expires_in: number }) {
   request.cookies.set("hae_party_access_token", session.access_token);
   request.cookies.set("hae_party_refresh_token", session.refresh_token);
   const headers = new Headers(request.headers);
   headers.set("cookie", request.cookies.toString());
   const response = NextResponse.next({ request: { headers } });
+  return writeClientCookies(response, session);
+}
+
+function writeClientCookies(response: NextResponse, session: { access_token: string; refresh_token: string; expires_in: number }) {
   const secure = process.env.NODE_ENV === "production";
   response.cookies.set("hae_party_access_token", session.access_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: session.expires_in });
   response.cookies.set("hae_party_refresh_token", session.refresh_token, { httpOnly: true, secure, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 });
@@ -108,13 +151,6 @@ function continueWithClientSession(request: NextRequest, session: { access_token
 function clearClientSession(response: NextResponse) {
   response.cookies.set("hae_party_access_token", "", { path: "/", maxAge: 0 });
   response.cookies.set("hae_party_refresh_token", "", { path: "/", maxAge: 0 });
-  return response;
-}
-
-function clearStaffSession(response: NextResponse) {
-  response.cookies.set("hae_access_token", "", { path: "/", maxAge: 0 });
-  response.cookies.set("hae_refresh_token", "", { path: "/", maxAge: 0 });
-  response.cookies.set(COMPANY_COOKIE, "", { path: "/", maxAge: 0 });
   return response;
 }
 
@@ -182,11 +218,19 @@ export async function proxy(request: NextRequest) {
     const clientConfig = businessConfig(selectedCompany);
     if (!clientConfig) return NextResponse.json({ error: "Customer portal configuration is missing" }, { status: 503 });
     const token = request.cookies.get("hae_party_access_token")?.value;
-    if (token && await lookupIdentity(token, "parties", "portal_active", clientConfig, selectedCompany, tenantSlug)) return NextResponse.next();
+    if (token) {
+      const identity = await lookupIdentity(token, "parties", "portal_active", clientConfig, selectedCompany, tenantSlug);
+      if (identity === true) return NextResponse.next();
+      if (identity === null) return NextResponse.json({ error: "Authentication service is temporarily unavailable. Please retry." }, { status: 503 });
+    }
     const refreshToken = request.cookies.get("hae_party_refresh_token")?.value;
     if (refreshToken) {
       const session = await refreshSession(refreshToken, clientConfig);
-      if (session && await lookupIdentity(session.access_token, "parties", "portal_active", clientConfig, selectedCompany, tenantSlug)) return continueWithClientSession(request, session);
+      if (session) {
+        const identity = await lookupIdentity(session.access_token, "parties", "portal_active", clientConfig, selectedCompany, tenantSlug);
+        if (identity === true) return continueWithClientSession(request, session);
+        if (identity === null) return writeClientCookies(NextResponse.json({ error: "Authentication service is temporarily unavailable. Please retry." }, { status: 503 }), session);
+      }
     }
     if (path.startsWith("/api/")) return clearClientSession(NextResponse.json({ error: "Customer sign-in required" }, { status: 401 }));
     const login = new URL("/client-login", request.url);
@@ -196,11 +240,28 @@ export async function proxy(request: NextRequest) {
   const selectedCompany = request.cookies.get(COMPANY_COOKIE)?.value;
   const selectedConfig = businessConfig(selectedCompany);
   const token = request.cookies.get("hae_access_token")?.value;
-  if (selectedConfig && token && await lookupIdentity(token, "team_members", "active", selectedConfig, selectedCompany, tenantSlug)) return NextResponse.next();
-  if (path.startsWith("/api/")) return clearStaffSession(NextResponse.json({ error: "Authentication required" }, { status: 401 }));
+  if (selectedConfig && selectedCompany) {
+    if (token) {
+      const identity = await lookupIdentity(token, "team_members", "active", selectedConfig, selectedCompany, tenantSlug);
+      if (identity === true) return NextResponse.next();
+      if (identity === null) return staffAuthUnavailable();
+    }
+    const refreshToken = request.cookies.get("hae_refresh_token")?.value;
+    if (refreshToken) {
+      const refreshed = await refreshStaffSession(refreshToken, selectedConfig);
+      if (refreshed.status === "unavailable") return staffAuthUnavailable();
+      if (refreshed.status === "ok") {
+        const identity = await lookupIdentity(refreshed.session.access_token, "team_members", "active", selectedConfig, selectedCompany, tenantSlug);
+        if (identity === true) return continueWithStaffSession(request, refreshed.session, selectedCompany);
+        if (identity === null) return staffAuthUnavailable(refreshed.session, selectedCompany);
+      }
+    }
+  }
+  // Do not clear cookies here: concurrent requests may have just rotated a refresh token.
+  if (path.startsWith("/api/")) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   const login = new URL("/login", request.url);
   login.searchParams.set("next", `${path}${request.nextUrl.search}`);
-  return clearStaffSession(NextResponse.redirect(login));
+  return NextResponse.redirect(login);
 }
 
 export const config = { matcher: ["/((?!_next/static|_next/image|favicon.ico|hamro-afno-logo.jpeg).*)"] };
