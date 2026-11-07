@@ -177,6 +177,8 @@ export default function Home() {
   const [fiscalYear, setFiscalYear] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [saleLines, setSaleLines] = useState<SaleLine[]>([emptySaleLine()]);
+  const [cancelledSale, setCancelledSale] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
   const lineNameInputs = useRef<(HTMLInputElement | null)[]>([]);
   const pendingLineFocus = useRef<number | null>(null);
   useEffect(() => {
@@ -207,6 +209,7 @@ export default function Home() {
   const [voucherDetail, setVoucherDetail] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editingVoucherId, setEditingVoucherId] = useState("");
+  const [editingVoucherNumber, setEditingVoucherNumber] = useState("");
   const [editingProductId, setEditingProductId] = useState("");
   const [productType, setProductType] = useState("finished_good");
   const [outputProductId, setOutputProductId] = useState("");
@@ -222,7 +225,7 @@ export default function Home() {
   const visibleNav = useMemo(() => nav.filter((item) => !navFeature[item] || entitlements[navFeature[item]] !== false), [entitlements]);
   const partyMatches = useMemo(() => matchingParties(parties, partySearch), [parties, partySearch]);
   function currentInvoiceDraft(): InvoiceDraft {
-    return { formParty, partySearch, newPartyName, place, phone, taxNo, transactionDate, dueDate, particulars, billCategory, taxPercent, discountPercent, supplierBillNo, saleLines };
+    return { cancelledSale, cancellationReason, formParty, partySearch, newPartyName, place, phone, taxNo, transactionDate, dueDate, particulars, billCategory, taxPercent, discountPercent, supplierBillNo, saleLines };
   }
   useEffect(() => {
     if (modal !== "sale" || editingVoucherId) return;
@@ -230,7 +233,7 @@ export default function Home() {
     if (!key) return;
     const timer = window.setTimeout(() => saveInvoiceDraft(key, currentInvoiceDraft()), 300);
     return () => window.clearTimeout(timer);
-  }, [modal, editingVoucherId, company?.id, currentMember?.id, fiscalYear?.id, formParty, partySearch, newPartyName, place, phone, taxNo, transactionDate, dueDate, particulars, billCategory, taxPercent, discountPercent, supplierBillNo, saleLines]);
+  }, [modal, editingVoucherId, company?.id, currentMember?.id, fiscalYear?.id, cancelledSale, cancellationReason, formParty, partySearch, newPartyName, place, phone, taxNo, transactionDate, dueDate, particulars, billCategory, taxPercent, discountPercent, supplierBillNo, saleLines]);
 
   function chooseExistingParty(name: string) {
     setFormParty(name);
@@ -340,6 +343,7 @@ export default function Home() {
   async function save(kind: string) {
     if (saveLock.current) return;
     if (snapshotSync !== "idle") { setNotice("Your last entry is saved. Refresh the latest totals before saving another entry."); return; }
+    if (modal === "sale" && cancelledSale && editingVoucherId && !window.confirm("Cancel this posted sales bill? Its original details remain in the audit log, while sales, party balance and stock effects are reversed. Separate payment receipts are not cancelled; check the party ledger afterwards. This cannot be undone.")) return;
     saveLock.current = true; setSaving(true);
     try { await saveEntry(kind); }
     catch { setNotice("Connection interrupted. Save status is not confirmed—check the register before submitting again to avoid a duplicate."); }
@@ -378,7 +382,8 @@ export default function Home() {
       applySnapshot(refreshed); setModal(null); setOutputProductId(""); setOutputQuantity(""); setProductionInputs([{ productId: "", quantity: 0 }]); setParticulars(""); setNotice(`Production batch ${data.batch_no} saved`); return;
     }
     const party = parties.find((p) => p.name === formParty);
-    if (modal === "sale" || modal === "purchase") {
+    const isCancelledSale = modal === "sale" && cancelledSale;
+    if ((modal === "sale" || modal === "purchase") && !isCancelledSale) {
       const invalidIndex = invalidInvoiceLine(saleLines);
       if (invalidIndex !== -1) {
         setNotice(`Item ${invalidIndex + 1}: enter a name, quantity greater than zero, and a rate (0 is allowed).`);
@@ -389,7 +394,7 @@ export default function Home() {
       (l) => l.name.trim() && l.quantity !== "" && l.quantity > 0 && l.rate !== "" && l.rate >= 0,
     );
     if (
-      (modal === "sale" || modal === "purchase") &&
+      (modal === "sale" || modal === "purchase") && !isCancelledSale &&
       (!validLines.length || (!party && !newPartyName.trim()))
     ) {
       setNotice(partySearch.trim() && !party && !newPartyName.trim() ? "Choose a party from the search results or add it as a new party." : "Please add a party and at least one valid product");
@@ -425,6 +430,7 @@ export default function Home() {
         voucherId: editingVoucherId || undefined,
         productId: editingProductId || undefined,
         type: modal || "payment",
+        cancelledSale: isCancelledSale,
         partyId: modal === "expense" ? undefined : party?.id,
         partyName:
           modal === "party"
@@ -433,7 +439,7 @@ export default function Home() {
               ? ""
               : party?.name || newPartyName.trim(),
         amount: Number(amount),
-        particulars,
+        particulars: isCancelledSale ? cancellationReason : particulars,
         paymentMode,
         handledBy: handledBy || currentMember?.id,
         moneyAccountId,
@@ -495,7 +501,7 @@ export default function Home() {
     const startNextSale = continueSalesEntry(modal, editingVoucherId);
     if (startNextSale) {
       const savedNumber = data.savedRecord?.number || data.savedRecord?.sequence;
-      setLastSavedSale(savedNumber ? String(savedNumber) : "");
+      setLastSavedSale(isCancelledSale ? null : savedNumber ? String(savedNumber) : "");
       const previewNumber = nextInvoicePreview(data.savedRecord?.sequence);
       if (previewNumber) setNextNumbers(current => ({ ...current, sale: previewNumber }));
       setFormParty("");
@@ -510,6 +516,9 @@ export default function Home() {
       });
     } else setModal(null);
     setEditingVoucherId("");
+    setEditingVoucherNumber("");
+    setCancelledSale(false);
+    setCancellationReason("");
     setEditingProductId("");
     setAmount("");
     setPaymentMode("Cash");
@@ -529,7 +538,7 @@ export default function Home() {
     setOpeningBalance("");
     setOpeningSide("debit");
     setDueDate("");
-    setNotice(startNextSale ? "Invoice saved. Ready for the next bill." : `${kind} saved successfully`);
+    setNotice(isCancelledSale ? `Bill #${data.savedRecord?.number || ""} cancelled. The number is retained with zero balance and no stock movement.` : startNextSale ? "Invoice saved. Ready for the next bill." : `${kind} saved successfully`);
     setNoticeVersion(version => version + 1);
     void refreshChequeCounts();
   }
@@ -538,6 +547,9 @@ export default function Home() {
     const draft = key ? loadInvoiceDraft(key) : null;
     setLastSavedSale(null);
     setEditingVoucherId("");
+    setEditingVoucherNumber("");
+    setCancelledSale(Boolean(draft?.cancelledSale));
+    setCancellationReason(draft?.cancellationReason || "");
     setModal("sale");
     setSessionExpired(false);
     setDraftStored(true);
@@ -670,9 +682,9 @@ export default function Home() {
     }
   }
   function editVoucher() {
-    const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type))return;
-    setEditingVoucherId(detail.id);setFormParty(detail.parties?.name||"");setPartySearch(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
-    if(detail.voucher_type==="sale"){setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setBillCategory(detail.bill_category==="pan"?"non_vat":detail.bill_category==="unclassified"?(Number(detail.tax_amount)>0?"vat":"non_vat"):(detail.bill_category||"vat"));setSupplierBillNo(detail.supplier_bill_no||"");setModal("sale");}
+    const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type)||detail.document_status==="cancelled")return;
+    setEditingVoucherId(detail.id);setEditingVoucherNumber(String(detail.sequence_no||detail.voucher_no||""));setFormParty(detail.parties?.name||"");setPartySearch(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
+    if(detail.voucher_type==="sale"){setCancelledSale(false);setCancellationReason("");setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setBillCategory(detail.bill_category==="pan"?"non_vat":detail.bill_category==="unclassified"?(Number(detail.tax_amount)>0?"vat":"non_vat"):(detail.bill_category||"vat"));setSupplierBillNo(detail.supplier_bill_no||"");setModal("sale");}
     else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
     setVoucherDetail(null);
   }
@@ -1057,12 +1069,12 @@ export default function Home() {
                   <strong>{money(totals.sales)}</strong>
                 </article>
                 <article>
-                  <small>INVOICES ISSUED</small>
-                  <strong>{salesTransactions.length}</strong>
+                  <small>BILL NUMBERS USED</small>
+                  <strong>{Math.max(0, Number(nextNumbers.sale) - 1)}</strong>
                 </article>
                 <article>
                   <small>LAST INVOICE</small>
-                  <strong>{salesTransactions[0]?.sequence_no || "No bill yet"}</strong>
+                  <strong>{Number(nextNumbers.sale) > 1 ? Number(nextNumbers.sale) - 1 : "No bill yet"}</strong>
                 </article>
                 <article>
                   <small>NEXT NUMBER</small>
@@ -1102,10 +1114,10 @@ export default function Home() {
                                 ? bsDate(t.date)
                                 : adDate(t.date)}
                             </td>
-                            <td>{t.party}</td>
-                            <td className="debit">{money(t.debit)}</td>
+                            <td>{t.document_status === "cancelled" ? "Cancelled bill" : t.party}</td>
+                            <td className="debit">{money(t.document_status === "cancelled" ? 0 : t.debit)}</td>
                             <td>
-                              <span className="paid-chip">Posted</span>
+                              <span className={t.document_status === "cancelled" ? "cancelled-chip" : "paid-chip"}>{t.document_status === "cancelled" ? "Cancelled" : "Posted"}</span>
                             </td>
                           </tr>
                         ))
@@ -1123,9 +1135,9 @@ export default function Home() {
                 <div className="mobile-register-list">
                   {salesTransactions.map((transaction) => (
                     <button key={transaction.id} onClick={() => openVoucherDetail(transaction.id)}>
-                      <span><strong>Invoice #{transaction.sequence_no || transaction.ref}</strong><small>{transaction.party}</small></span>
-                      <span className="mobile-register-amount"><strong>{money(transaction.debit)}</strong><small>{calendar === "BS" ? bsDate(transaction.date) : adDate(transaction.date)}</small></span>
-                      <span className="mobile-register-meta"><span>{transaction.ref}</span><span className="paid-chip">Posted</span></span>
+                      <span><strong>Invoice #{transaction.sequence_no || transaction.ref}</strong><small>{transaction.document_status === "cancelled" ? "Cancelled bill" : transaction.party}</small></span>
+                      <span className="mobile-register-amount"><strong>{money(transaction.document_status === "cancelled" ? 0 : transaction.debit)}</strong><small>{calendar === "BS" ? bsDate(transaction.date) : adDate(transaction.date)}</small></span>
+                      <span className="mobile-register-meta"><span>{transaction.ref}</span><span className={transaction.document_status === "cancelled" ? "cancelled-chip" : "paid-chip"}>{transaction.document_status === "cancelled" ? "Cancelled" : "Posted"}</span></span>
                     </button>
                   ))}
                   {!salesTransactions.length && <div className="dashboard-empty">No sales invoice in this fiscal year. Next invoice starts at 1.</div>}
@@ -1381,7 +1393,7 @@ export default function Home() {
                 <div className="voucher-company">
                   {company.logo_url && <img src={company.logo_url} alt="" />}
                   <div><strong>{company.name}</strong><span>Official accounting record</span></div>
-                  <div className="voucher-status"><span>POSTED</span><small>{voucherDetail.voucher_date ? bsDate(voucherDetail.voucher_date) : ""}</small></div>
+                  <div className="voucher-status"><span>{voucherDetail.document_status === "cancelled" ? "CANCELLED · NO ACCOUNTING EFFECT" : "POSTED"}</span><small>{voucherDetail.voucher_date ? bsDate(voucherDetail.voucher_date) : ""}</small></div>
                 </div>
                 <div className="voucher-meta">
                   <div><small>PARTY / CUSTOMER</small><strong>{voucherDetail.parties?.name || "Cash / General"}</strong><span>{[voucherDetail.parties?.place, voucherDetail.parties?.phone, voucherDetail.parties?.tax_no ? `PAN ${voucherDetail.parties.tax_no}` : ""].filter(Boolean).join(" · ") || "No additional details"}</span></div>
@@ -1399,7 +1411,7 @@ export default function Home() {
                 {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
               </div>
             )}
-            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`)); }}>Print / PDF</button></div>
+            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&voucherDetail.document_status!=="cancelled"&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`)); }}>Print / PDF</button></div>
           </section>
         </div>
       )}
@@ -1456,7 +1468,8 @@ export default function Home() {
               {modal === "sale" && !editingVoucherId && sessionExpired && <div className="invoice-draft-alert full" role="alert"><strong>Sign-in expired; this invoice has not been saved.</strong><span>{draftStored ? "Your entries are preserved as a draft in this browser." : "Browser draft storage is unavailable. Keep this tab open and copy the invoice details before signing in."}</span>{draftStored ? <a href={`/login?company=${encodeURIComponent(company?.slug || "")}&next=${encodeURIComponent("/?resumeInvoice=1")}`}>Sign in again and resume</a> : <a target="_blank" rel="noopener noreferrer" href={`/login?company=${encodeURIComponent(company?.slug || "")}`}>Sign in in a new tab</a>}</div>}
               {modal === "sale" && !editingVoucherId && draftRestored && !sessionExpired && <div className="invoice-draft-alert full" role="status"><span>Unfinished invoice restored from this browser. Check it before saving.</span><button type="button" onClick={discardSaleDraft}>Discard draft</button></div>}
               {modal === "sale" && !editingVoucherId && lastSavedSale !== null && <div className="snapshot-sync full" role="status"><span>Invoice{lastSavedSale ? ` #${lastSavedSale}` : ""} saved. {snapshotSync === "loading" ? "Enter the next bill while stock and numbering update…" : snapshotSync === "failed" ? "Refresh failed. Your saved bill is safe; retry the refresh before saving the next one." : "Ready for the next invoice."}</span>{snapshotSync === "failed" && <button onClick={() => { const pending = pendingRefresh.current; if (pending) void refreshSavedAccounting(pending.fiscalYearId, pending.label); }}>Retry refresh</button>}</div>}
-              {modal !== "expense" && (
+              {modal === "sale" && ["admin", "manager", "accountant"].includes(currentMember?.role || "") && <label className="cancelled-sale-toggle full"><input type="checkbox" checked={cancelledSale} onChange={event => setCancelledSale(event.target.checked)} /><span><strong>Cancelled bill / reserve this invoice number</strong><small>{editingVoucherId ? "Mark this posted bill as cancelled. Its original details will be kept in the audit log; party balance, sales and stock will be reversed." : "Use this when a bill number was cancelled. It remains in the register as Rs. 0 and the next invoice gets the next number."}</small></span></label>}
+              {modal !== "expense" && !(modal === "sale" && cancelledSale) && (
                 <>
                   {(modal === "sale" || modal === "purchase") && (
                     <div className="invoice-section-title full"><span>01</span><div><strong>{modal === "sale" ? "Customer details" : "Supplier details"}</strong><small>Select an existing party or create one instantly.</small></div></div>
@@ -1531,7 +1544,7 @@ export default function Home() {
                   readOnly
                   value={String(
                     modal === "sale"
-                      ? nextNumbers.sale
+                      ? editingVoucherId ? editingVoucherNumber : nextNumbers.sale
                       : modal === "payment"
                         ? nextNumbers.receipt
                         : modal === "purchase"
@@ -1545,13 +1558,13 @@ export default function Home() {
                 Generated by
                 <input readOnly value={currentMember?.name || "Signed-in employee"} />
               </label>
-              {(modal === "sale" || modal === "purchase") && (
+              {(modal === "purchase" || (modal === "sale" && !cancelledSale)) && (
                 <div className="invoice-section-title full"><span>02</span><div><strong>Items & pricing</strong><small>Add products, quantity and rate. Scroll normally for totals.</small></div></div>
               )}
-              {(modal === "sale" || modal === "purchase") && <label>Due date / payment term (BS)<BsDateInput value={dueDate} onChange={setDueDate}/></label>}
-              {(modal === "sale" || modal === "purchase") && <label>Bill type<select value={billCategory} onChange={event => { setBillCategory(event.target.value); setTaxPercent(event.target.value === "vat" ? 13 : 0); }}><option value="vat">VAT bill</option>{modal === "purchase" && <option value="pan">PAN bill (no VAT)</option>}<option value="non_vat">{modal === "sale" ? "Non-VAT bill" : "No VAT / no PAN bill"}</option></select></label>}
+              {(modal === "purchase" || (modal === "sale" && !cancelledSale)) && <label>Due date / payment term (BS)<BsDateInput value={dueDate} onChange={setDueDate}/></label>}
+              {(modal === "purchase" || (modal === "sale" && !cancelledSale)) && <label>Bill type<select value={billCategory} onChange={event => { setBillCategory(event.target.value); setTaxPercent(event.target.value === "vat" ? 13 : 0); }}><option value="vat">VAT bill</option>{modal === "purchase" && <option value="pan">PAN bill (no VAT)</option>}<option value="non_vat">{modal === "sale" ? "Non-VAT bill" : "No VAT / no PAN bill"}</option></select></label>}
               {modal === "purchase" && <label>Supplier's bill number<input value={supplierBillNo} onChange={event=>setSupplierBillNo(event.target.value)} placeholder="Number printed on supplier bill"/></label>}
-              {modal === "sale" || modal === "purchase" ? (
+              {modal === "sale" && cancelledSale ? <div className="cancelled-sale-explanation full"><strong>This invoice number will be cancelled.</strong><p>No customer charge, VAT, stock movement or ledger balance will be posted. The number remains visible in the sales register.</p><label>Reason / note (optional)<input value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} placeholder="e.g. Bill prepared by mistake" /></label></div> : modal === "sale" || modal === "purchase" ? (
                 <div className="invoice-builder full">
                   <div className="line-head">
                     <span>PRODUCT / DESCRIPTION</span>
@@ -1731,15 +1744,15 @@ export default function Home() {
                 </>
               )}
             </div>
-            <div className="balance-note">
+            {!(modal === "sale" && cancelledSale) && <div className="balance-note">
               <span>Current balance</span>
               <strong>
                 {money(parties.find((p) => p.name === formParty)?.balance || 0)}{" "}
                 Dr.
               </strong>
-            </div>
+            </div>}
             <div className="modal-actions">
-              {(modal === "sale" || modal === "purchase") && (
+              {(modal === "purchase" || (modal === "sale" && !cancelledSale)) && (
                 <button className="review-total" onClick={reviewInvoiceTotal}>
                   <span>Review total ↓</span>
                   <strong>
@@ -1766,7 +1779,7 @@ export default function Home() {
                 {saving
                   ? "Saving…"
                   : modal === "sale"
-                    ? editingVoucherId ? "Update invoice" : snapshotSync === "loading" ? "Updating stock & number…" : "Save & next invoice"
+                    ? cancelledSale ? editingVoucherId ? "Confirm cancellation" : "Reserve cancelled bill" : editingVoucherId ? "Update invoice" : snapshotSync === "loading" ? "Updating stock & number…" : "Save & next invoice"
                     : modal === "purchase"
                       ? "Save purchase"
                       : modal === "expense"

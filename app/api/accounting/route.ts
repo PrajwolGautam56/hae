@@ -48,7 +48,7 @@ async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnTy
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type),ledger_entries!ledger_company_voucher_fkey(debit,credit)",
+        "id,party_id,voucher_type,document_status,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type),ledger_entries!ledger_company_voucher_fkey(debit,credit)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
@@ -111,6 +111,7 @@ async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnTy
     return ({
     id: v.id,
     type: v.voucher_type,
+    document_status: v.document_status,
     ref: v.voucher_no,
     date: v.voucher_date,
     particulars: cancelledCheque?`${v.narration||"Cheque receipt"} · Cancelled / adjusted`:v.narration,
@@ -200,7 +201,7 @@ export async function GET(request: Request) {
       if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
-        .select("id,party_id,fiscal_year_id,voucher_type,voucher_no,sequence_no,voucher_date,due_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
+        .select("id,party_id,fiscal_year_id,voucher_type,document_status,voucher_no,sequence_no,voucher_date,due_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
         .eq("id", voucherId)
         .eq("company_id", selectedCompany.id)
         .single();
@@ -234,6 +235,21 @@ export async function POST(request: Request) {
     const initialState = await accountingContext(String(body.fiscalYearId || ""));
     const currentMember = await getCurrentMember(supabase, initialState.company.id);
     if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
+    if (type === "sale" && body.cancelledSale === true) {
+      if (!["admin", "manager", "accountant"].includes(currentMember.role))
+        return NextResponse.json({ error: "Only an administrator, manager or accountant can reserve a cancelled bill" }, { status: 403 });
+      const { data, error } = await supabase.rpc("record_cancelled_sales_invoice", {
+        p_company_id: initialState.company.id,
+        p_fiscal_year_id: initialState.fiscalYear.id,
+        p_member_id: currentMember.id,
+        p_date: String(body.date || businessDate()),
+        p_reason: String(body.particulars || ""),
+      });
+      if (error) throw error;
+      return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), initialState.fiscalYear.id,
+        () => snapshot(initialState.fiscalYear.id, initialState, currentMember),
+        { id: data.id, number: data.voucher_no, sequence: data.sequence_no }), { status: 201 });
+    }
     if (type === "party") {
       const name = String(body.partyName || "").trim();
       if (!name)
@@ -452,6 +468,24 @@ export async function PUT(request: Request) {
       return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), state.fiscalYear.id, () => snapshot(state.fiscalYear.id, state, currentMember)));
     }
     const voucherId=String(body.voucherId||"");const type=String(body.type||"");
+    if (type === "sale" && body.cancelledSale === true) {
+      if (!["admin", "manager", "accountant"].includes(currentMember.role))
+        return NextResponse.json({error:"Only an administrator, manager or accountant can cancel a sales bill"},{status:403});
+      if (!voucherId) return NextResponse.json({error:"Select the bill to cancel"},{status:400});
+      await assertCompanyRecord(supabase,"vouchers",voucherId,selectedCompany.id,"Sales bill");
+      const {data: existing,error: existingError}=await supabase.from("vouchers").select("fiscal_year_id,document_status").eq("id",voucherId).eq("company_id",selectedCompany.id).single();
+      if(existingError)throw existingError;
+      if(existing.document_status==="cancelled")return NextResponse.json({error:"This bill is already cancelled"},{status:409});
+      const {data,error}=await supabase.rpc("record_cancelled_sales_invoice",{
+        p_company_id:selectedCompany.id,p_fiscal_year_id:existing.fiscal_year_id,
+        p_member_id:currentMember.id,p_date:String(body.date||businessDate()),
+        p_reason:String(body.particulars||""),p_voucher_id:voucherId,
+      });
+      if(error)throw error;
+      return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"),existing.fiscal_year_id,
+        () => snapshot(existing.fiscal_year_id,undefined,currentMember),
+        {id:data.id,number:data.voucher_no,sequence:data.sequence_no}));
+    }
     if(type==="bill_classification"){
       if(!["admin","manager","accountant"].includes(currentMember.role))return NextResponse.json({error:"Only an administrator, manager or accountant can classify bills"},{status:403});
       const {error}=await supabase.rpc("classify_voucher_bill",{p_company_id:selectedCompany.id,p_voucher_id:voucherId,p_category:String(body.billCategory||""),p_member_id:currentMember.id});
@@ -467,10 +501,11 @@ export async function PUT(request: Request) {
       assertOptionalCompanyRecord(supabase,"money_accounts",body.moneyAccountId,selectedCompany.id,"Cash or bank account"),
       assertCompanyRecords(supabase,"products",Array.isArray(body.lines)?body.lines.map((line:unknown)=>typeof line==="object"&&line!==null?(line as Record<string,unknown>).product_id:null):[],selectedCompany.id,"Invoice products"),
     ]);
-    const { data: editableVoucher, error: editableVoucherError } = await supabase.from("vouchers").select("voucher_type,fiscal_year_id").eq("id", voucherId).eq("company_id", selectedCompany.id).single();
+    const { data: editableVoucher, error: editableVoucherError } = await supabase.from("vouchers").select("voucher_type,fiscal_year_id,document_status").eq("id", voucherId).eq("company_id", selectedCompany.id).single();
     if (editableVoucherError) throw editableVoucherError;
     const expectedVoucherType = type === "sale" ? "sale" : "receipt";
     if (editableVoucher.voucher_type !== expectedVoucherType) return NextResponse.json({ error: "Voucher type does not match this editor" }, { status: 409 });
+    if (editableVoucher.document_status === "cancelled") return NextResponse.json({ error: "A cancelled bill cannot be edited or posted again" }, { status: 409 });
     if(type==="payment"&&String(body.paymentMode)!=="Cheque"&&!body.moneyAccountId)return NextResponse.json({error:"Select where the payment was received"},{status:400});
     const result=type==="sale"?await supabase.rpc("record_classified_invoice",{p_company_id:selectedCompany.id,p_fiscal_year_id:editableVoucher.fiscal_year_id,p_invoice_type:"sale",p_bill_category:String(body.billCategory||""),p_due_date:body.dueDate||null,p_supplier_bill_no:String(body.supplierBillNo||""),p_member_id:currentMember.id,p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_lines:body.lines,p_discount_percent:Number(body.discountPercent||0),p_tax_percent:Number(body.taxPercent||0),p_narration:String(body.particulars||"")}):await supabase.rpc("update_payment_receipt",{p_voucher_id:voucherId,p_party_id:partyId,p_date:String(body.date),p_amount:Number(body.amount),p_narration:String(body.particulars||""),p_payment_mode:String(body.paymentMode||"Cash"),p_cheque_no:body.chequeNo||null,p_cheque_bank:body.chequeBank||null,p_cheque_exchange_date:body.chequeExchangeDate||null});
     if(result.error)throw result.error;

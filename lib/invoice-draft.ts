@@ -1,4 +1,6 @@
 export type InvoiceDraft = {
+  cancelledSale?: boolean;
+  cancellationReason?: string;
   formParty: string;
   partySearch: string;
   newPartyName: string;
@@ -22,7 +24,7 @@ export function invoiceDraftKey(companyId?: string, memberId?: string, fiscalYea
 }
 
 function hasContent(draft: InvoiceDraft): boolean {
-  return Boolean(draft.formParty || draft.partySearch.trim() || draft.newPartyName.trim() || draft.place.trim() || draft.phone.trim() || draft.taxNo.trim() || draft.dueDate || draft.particulars.trim() || draft.saleLines.some(line => line.productId || line.name.trim() || line.rate !== "" || line.quantity !== 1));
+  return Boolean(draft.cancelledSale || draft.cancellationReason?.trim() || draft.formParty || draft.partySearch.trim() || draft.newPartyName.trim() || draft.place.trim() || draft.phone.trim() || draft.taxNo.trim() || draft.dueDate || draft.particulars.trim() || draft.saleLines.some(line => line.productId || line.name.trim() || line.rate !== "" || line.quantity !== 1));
 }
 
 export function saveInvoiceDraft(key: string, draft: InvoiceDraft, storage: Pick<Storage, "setItem" | "removeItem"> = sessionStorage) {

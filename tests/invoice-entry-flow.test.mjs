@@ -38,11 +38,11 @@ const page = await source('app/page.tsx');
 const responseHandler = page.slice(page.indexOf('    const data = await response.json();', page.indexOf('const response = await fetch("/api/accounting",')),
   page.indexOf('\n  function openSale()'));
 const handlerBody = responseHandler.slice(0, responseHandler.lastIndexOf('\n  }'));
-async function runSaveResponse({ type = 'sale', editing = '', ok = true } = {}) {
+async function runSaveResponse({ type = 'sale', editing = '', ok = true, cancelled = false } = {}) {
   const state = { modal: type, formParty: 'Old party', saleLines: [{ name: 'Old item' }], discountPercent: 10, nextNumbers: { sale: 3, receipt: 7 } };
   const effects = [];
   const context = {
-    modal: type, editingVoucherId: editing, kind: 'Invoice',
+    modal: type, editingVoucherId: editing, kind: 'Invoice', isCancelledSale: cancelled,
     response: { ok, json: async () => ok ? { saved: true, refreshRequired: true, fiscalYearId: 'fy', savedRecord: { sequence: 3, number: '3' } } : { error: 'Stock unavailable' } },
     continueSalesEntry, nextInvoicePreview,
     emptySaleLine: () => ({ name: '', quantity: 1, rate: 0 }),
@@ -78,6 +78,15 @@ test('saved sale keeps the editor open, clears the old draft, focuses party and 
   assert.equal('taxPercent' in state, false);
   assert.equal('billCategory' in state, false);
   assert.deepEqual(effects, ['refresh', 'scroll', 'focus']);
+});
+
+test('reserving a cancelled number resets to a normal next bill and preserves the sequence', async () => {
+  const {state} = await runSaveResponse({cancelled:true});
+  assert.equal(state.modal,'sale');
+  assert.equal(state.cancelledSale,false);
+  assert.equal(state.nextNumbers.sale,4);
+  assert.equal(state.lastSavedSale,null);
+  assert.match(state.notice,/Bill #3 cancelled/);
 });
 
 test('editing a sale and saving other voucher types still closes the editor', async () => {
