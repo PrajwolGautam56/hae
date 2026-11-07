@@ -143,7 +143,7 @@ export async function GET(request: Request) {
     let unifiedError = "";
     const appCompanyIds = (companies.data || []).map((company) => company.app_company_id).filter(Boolean) as string[];
     if (unified && appCompanyIds.length) {
-      const branding = await unified.from("companies").select("id,logo_url,address,phone").in("id",appCompanyIds);
+      const branding = await unified.from("companies").select("id,logo_url,address,phone,settings").in("id",appCompanyIds);
       if (branding.error) throw branding.error;
       companyBranding=branding.data || [];
       const users = await unified.from("team_members").select("id,company_id,name,email,phone,role,active,auth_user_id,created_at").in("company_id", appCompanyIds).order("created_at");
@@ -266,7 +266,11 @@ export async function POST(request: Request) {
       if (error) throw error;
       const appCompanyId = await provisionUnifiedCompany(db, tenantId, data);
       if (appCompanyId) {
-        if (logo !== undefined) { const saved=await getUnifiedAdmin()!.from("companies").update({logo_url:logo||null}).eq("id",appCompanyId).eq("organization_id",tenantId); if(saved.error)throw saved.error; }
+        const brandDb = getUnifiedAdmin()!;
+        const previous = await brandDb.from("companies").select("settings").eq("id",appCompanyId).eq("organization_id",tenantId).single();
+        if (previous.error) throw previous.error;
+        const saved = await brandDb.from("companies").update({ ...(logo !== undefined ? { logo_url: logo || null } : {}), address: textOrNull(body.address), phone: textOrNull(body.phone), settings: { ...previous.data.settings, pan: textOrNull(body.pan) } }).eq("id",appCompanyId).eq("organization_id",tenantId);
+        if (saved.error) throw saved.error;
         const { error: linkError } = await db.from("platform_companies").update({ app_company_id: appCompanyId, database_status: "ready", status: "active", updated_at: new Date().toISOString() }).eq("id", data.id);
         if (linkError) throw new Error(`Company was provisioned but Control could not link it. Apply the Control entitlement migration. ${linkError.message}`);
       }
@@ -445,7 +449,9 @@ export async function POST(request: Request) {
         if (unified) {
           const { error: mirrorError } = await unified.from("platform_companies").update({ name: String(body.name || "").trim(), legal_name: textOrNull(body.legalName), status, login_enabled: loginEnabled, database_status: databaseStatus, portal_enabled: Boolean(body.portalEnabled), updated_at: new Date().toISOString() }).eq("id", companyId).eq("tenant_id", currentCompany.tenant_id);
           if (mirrorError) throw mirrorError;
-          const businessUpdate=await unified.from("companies").update({ name: String(body.name || "").trim(), active: status === "active", ...(logo!==undefined?{logo_url:logo||null}:{}) }).eq("id", currentCompany.app_company_id).eq("organization_id", currentCompany.tenant_id);
+          const previous = await unified.from("companies").select("settings").eq("id",currentCompany.app_company_id).eq("organization_id",currentCompany.tenant_id).single();
+          if (previous.error) throw previous.error;
+          const businessUpdate=await unified.from("companies").update({ name: String(body.name || "").trim(), active: status === "active", ...(body.pan !== undefined ? { settings: { ...previous.data.settings, pan: textOrNull(body.pan) } } : {}), ...(body.address !== undefined ? { address: textOrNull(body.address) } : {}), ...(body.phone !== undefined ? { phone: textOrNull(body.phone) } : {}), ...(logo!==undefined?{logo_url:logo||null}:{}) }).eq("id", currentCompany.app_company_id).eq("organization_id", currentCompany.tenant_id);
           if(businessUpdate.error)throw businessUpdate.error;
         }
       }

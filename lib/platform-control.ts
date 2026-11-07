@@ -103,12 +103,16 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
       .eq("active", true)
       .maybeSingle();
     if (tenant) {
-      let companiesResult: { data: Array<Record<string, unknown>> | null; error: { message: string } | null } = await control
+      const [initialCompanies, { data: subscription }, { data: entitlementRows }] = await Promise.all([control
         .from("platform_companies")
         .select("id,app_company_id,slug,name,connection_key,status,login_enabled")
         .eq("tenant_id", tenant.id)
         .order("sort_order")
-        .order("name");
+        .order("name"),
+        control.from("platform_subscriptions").select("plan_name,status,company_limit,user_limit,expires_on").eq("tenant_id", tenant.id).maybeSingle(),
+        control.from("platform_entitlements").select("feature_key,enabled").eq("tenant_id", tenant.id),
+      ]);
+      let companiesResult: { data: Array<Record<string, unknown>> | null; error: { message: string } | null } = initialCompanies;
       if (companiesResult.error && /app_company_id.*(does not exist|schema cache)/i.test(companiesResult.error.message)) {
         companiesResult = await control
           .from("platform_companies")
@@ -117,10 +121,6 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
           .order("sort_order")
           .order("name");
       }
-      const [{ data: subscription }, { data: entitlementRows }] = await Promise.all([
-        control.from("platform_subscriptions").select("plan_name,status,company_limit,user_limit,expires_on").eq("tenant_id", tenant.id).maybeSingle(),
-        control.from("platform_entitlements").select("feature_key,enabled").eq("tenant_id", tenant.id),
-      ]);
       const companies = companiesResult.data;
       if (companies) return rememberRegistry(slug, {
         tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, domain: tenant.primary_domain },

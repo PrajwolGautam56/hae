@@ -5,6 +5,9 @@ import { getCurrentMember } from "../../../lib/current-member";
 import { getSelectedBusinessCompany } from "../../../lib/company-context";
 import { requireFeature } from "../../../lib/feature-access";
 import { assertCompanyRecord, assertCompanyRecords, assertOptionalCompanyRecord } from "../../../lib/company-ownership";
+import { allReportRows } from "../../../lib/report-query";
+import { buildOverviewMonths } from "../../../lib/overview-model";
+import { accountingMutationResponse } from "../../../lib/mutation-response";
 export const dynamic = "force-dynamic";
 
 const businessDate = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -18,8 +21,8 @@ async function accountingContext(requestedFy?:string){
   fiscalYear ||= fiscalYears?.[0];if(!fiscalYear)throw new Error("Fiscal year not found");return{supabase,company,fiscalYears:fiscalYears||[],fiscalYear};
 }
 
-async function snapshot(requestedFy?: string) {
-  const {supabase,company,fiscalYears,fiscalYear}=await accountingContext(requestedFy);
+async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnType<typeof accountingContext>>, verifiedMember?: Awaited<ReturnType<typeof getCurrentMember>>) {
+  const {supabase,company,fiscalYears,fiscalYear}=preparedContext || await accountingContext(requestedFy);
   const today = businessDate();
   const [
     { data: parties, error: partyError },
@@ -31,6 +34,7 @@ async function snapshot(requestedFy?: string) {
     { data: sequences, error: sequenceError },
     { data: members, error: memberError },
     { data: moneyAccounts, error: moneyAccountError },
+    currentMember,
   ] = await Promise.all([
     supabase
       .from("parties")
@@ -50,11 +54,12 @@ async function snapshot(requestedFy?: string) {
       .order("voucher_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(50),
-    supabase
+    allReportRows(supabase
       .from("vouchers")
-      .select("voucher_type,voucher_date,total,payment_mode,cheque_status")
+      .select("id,voucher_type,voucher_date,total,payment_mode,cheque_status,document_status")
+      .eq("company_id", company.id)
       .eq("fiscal_year_id", fiscalYear.id)
-      .order("voucher_date"),
+      .order("voucher_date").order("id")).then(data => ({ data, error: null })),
     supabase
       .from("ledger_entries")
       .select("party_id,debit,credit")
@@ -75,10 +80,11 @@ async function snapshot(requestedFy?: string) {
       .eq("fiscal_year_id", fiscalYear.id),
     supabase.from("team_members").select("id,name,email,role,active").eq("company_id", company.id).eq("active", true).order("name"),
     supabase.from("money_account_balances").select("id,account_type,name,bank_name,account_number,team_member_id,opening_balance,balance,active").eq("company_id", company.id).eq("active", true).order("account_type").order("name"),
+    verifiedMember ? Promise.resolve(verifiedMember) : getCurrentMember(supabase, company.id),
   ]);
   if (partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError || memberError || moneyAccountError)
     throw partyError || openingError || voucherError || fiscalVoucherError || partyLedgerError || productError || sequenceError || memberError || moneyAccountError;
-  const currentMember = await getCurrentMember(supabase, company.id);
+  if (!currentMember) throw new Error("Active team access is required");
   const productRows = (products || []).map((row:any) => ({ ...row, item_type: row.item_type || "finished_good" }));
   const openingMap = new Map(
     (openings || []).map((o) => [o.party_id, Number(o.amount)]),
@@ -134,6 +140,7 @@ async function snapshot(requestedFy?: string) {
     receivable: partyRows.reduce((s, p) => s + Math.max(0, p.balance), 0),
   };
   for (const v of fiscalVouchers || []) {
+    if (v.document_status && v.document_status !== "posted") continue;
     if (v.voucher_type === "sale") totals.sales += Number(v.total);
     if (v.voucher_type === "sale_return") totals.sales -= Number(v.total);
     if (v.voucher_type === "receipt" && !(v.payment_mode === "Cheque" && v.cheque_status === "cancelled")) totals.received += Number(v.total);
@@ -144,23 +151,18 @@ async function snapshot(requestedFy?: string) {
     : today > fiscalYear.end_ad
       ? fiscalYear.end_ad
       : today;
-  const currentBs = adToBsParts(chartEnd);
-  const monthKeys = Array.from({ length: 6 }, (_, index) => {
-    const offset = 5 - index;
+  const currentBs = adToBsParts(fiscalYear.end_ad);
+  const monthKeys = Array.from({ length: 12 }, (_, index) => {
+    const offset = 11 - index;
     const absoluteMonth = currentBs.year * 12 + currentBs.month - 1 - offset;
     const year = Math.floor(absoluteMonth / 12);
     const month = (absoluteMonth % 12) + 1;
     return { key: `${year}-${month}`, year, month, label: bsMonths[month - 1] };
   });
-  const performance = new Map(monthKeys.map((month) => [month.key, { ...month, sales: 0, collections: 0 }]));
-  for (const voucher of fiscalVouchers || []) {
-    const parts = adToBsParts(voucher.voucher_date);
-    const bucket = performance.get(`${parts.year}-${parts.month}`);
-    if (!bucket) continue;
-    if (voucher.voucher_type === "sale") bucket.sales += Number(voucher.total);
-    if (voucher.voucher_type === "sale_return") bucket.sales -= Number(voucher.total);
-    if (voucher.voucher_type === "receipt" && !(voucher.payment_mode === "Cheque" && voucher.cheque_status === "cancelled")) bucket.collections += Number(voucher.total);
-  }
+  const performance = buildOverviewMonths(fiscalVouchers || [], monthKeys, date => {
+    const parts = adToBsParts(date);
+    return `${parts.year}-${parts.month}`;
+  });
   return {
     source: "supabase",
     company,
@@ -170,7 +172,8 @@ async function snapshot(requestedFy?: string) {
     products: productRows,
     transactions,
     totals,
-    monthlyPerformance: monthKeys.map((month) => performance.get(month.key)),
+    monthlyPerformance: performance,
+    overviewThrough: chartEnd,
     members: members || [],
     moneyAccounts: (moneyAccounts || [])
       .filter((account:any) => ["admin", "manager", "accountant"].includes(currentMember?.role) || account.account_type !== "employee_wallet" || account.team_member_id === currentMember?.id)
@@ -265,7 +268,7 @@ export async function POST(request: Request) {
         p_company_id: initialState.company.id,
         p_from_fiscal_year_id: initialState.fiscalYear.id,
       });
-      return NextResponse.json(await snapshot(initialState.fiscalYear.id), {
+      return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), initialState.fiscalYear.id, () => snapshot(initialState.fiscalYear.id, initialState, currentMember)), {
         status: 201,
       });
     }
@@ -292,7 +295,7 @@ export async function POST(request: Request) {
         { onConflict: "company_id,name" },
       );
       if (error) throw error;
-      return NextResponse.json(await snapshot(initialState.fiscalYear.id), {
+      return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), initialState.fiscalYear.id, () => snapshot(initialState.fiscalYear.id, initialState, currentMember)), {
         status: 201,
       });
     }
@@ -395,13 +398,8 @@ export async function POST(request: Request) {
       if (restoreError) throw restoreError;
     }
     if (result.error) throw result.error;
-    if (["sale", "purchase"].includes(type)) {
-      const voucherId = (result.data as any)?.id;
-      if (voucherId) {
-        const { error: attributionError } = await supabase.from("vouchers").update({ generated_by: currentMember.id, handled_by: currentMember.id, due_date: body.dueDate || null }).eq("id", voucherId).eq("company_id", state.company.id);
-        if (attributionError) throw attributionError;
-      }
-    }
+    // record_classified_invoice already persists attribution and due_date atomically.
+    // Repeating that UPDATE also re-runs the deferred journal rebuild trigger.
     if (type === "payment" && String(body.paymentMode) === "Cheque") {
       const voucherId = (result.data as any)?.id;
       if (!voucherId) throw new Error("Receipt was created but cheque details could not be linked");
@@ -424,7 +422,8 @@ export async function POST(request: Request) {
       p_company_id: state.company.id,
       p_from_fiscal_year_id: state.fiscalYear.id,
     });
-    return NextResponse.json(await snapshot(state.fiscalYear.id), {
+    const savedVoucher = result.data as { id?: string; voucher_no?: string; sequence_no?: number } | null;
+    return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), state.fiscalYear.id, () => snapshot(state.fiscalYear.id, state, currentMember), savedVoucher ? { id: savedVoucher.id, number: savedVoucher.voucher_no, sequence: savedVoucher.sequence_no } : undefined), {
       status: 201,
     });
   } catch (error) {
@@ -450,7 +449,7 @@ export async function PUT(request: Request) {
       if(!Number.isFinite(values.sale_price)||!Number.isFinite(values.purchase_price)||values.sale_price<0||values.purchase_price<0)return NextResponse.json({error:"Product prices must be valid positive numbers"},{status:400});
       const {data,error}=await supabase.from("products").update(values).eq("id",productId).eq("company_id",state.company.id).select("id").maybeSingle();
       if(error)throw error;if(!data)return NextResponse.json({error:"Product was not found"},{status:404});
-      return NextResponse.json(await snapshot(state.fiscalYear.id));
+      return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), state.fiscalYear.id, () => snapshot(state.fiscalYear.id, state, currentMember)));
     }
     const voucherId=String(body.voucherId||"");const type=String(body.type||"");
     if(type==="bill_classification"){
@@ -490,16 +489,9 @@ export async function PUT(request: Request) {
         const {error:insertMovementError}=await supabase.from("money_movements").insert({...movementValues,company_id:legacyVoucher.company_id,fiscal_year_id:legacyVoucher.fiscal_year_id,voucher_id:voucherId,movement_type:"customer_receipt",party_id:legacyVoucher.party_id,generated_by:currentMember.id,reference:legacyVoucher.voucher_no,notes:String(body.particulars||"")});if(insertMovementError)throw insertMovementError;
         }
       }
-    } else {
-      const { error: dueDateError } = await supabase
-        .from("vouchers")
-        .update({ due_date: body.dueDate || null })
-        .eq("id", voucherId)
-        .eq("company_id", selectedCompany.id);
-      if (dueDateError) throw dueDateError;
     }
     const {data:voucher}=await supabase.from("vouchers").select("fiscal_year_id,company_id").eq("id",voucherId).eq("company_id",selectedCompany.id).single();
     if(voucher)await supabase.rpc("refresh_future_opening_balances",{p_company_id:voucher.company_id,p_from_fiscal_year_id:voucher.fiscal_year_id});
-    return NextResponse.json(await snapshot(voucher?.fiscal_year_id));
+    return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), editableVoucher.fiscal_year_id, () => snapshot(editableVoucher.fiscal_year_id, undefined, currentMember)));
   }catch(error:any){return NextResponse.json({error:error?.message||"Could not update voucher"},{status:500})}
 }

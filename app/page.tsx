@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import BsDateInput from "./bs-date-input";
-import { formatBs } from "../lib/nepali-date";
+import { adToBsParts, formatBs } from "../lib/nepali-date";
+import OverviewAnalytics from "./overview-analytics";
+import type { OverviewMonth } from "../lib/overview-model";
 import { downloadCsv, printDocument } from "../lib/export-data";
 import CrmWorkspace from "./crm-workspace";
 import ReportsWorkspace from "./reports-workspace";
@@ -11,11 +13,20 @@ import FundsWorkspace from "./funds-workspace";
 import OrdersWorkspace from "./orders-workspace";
 import ClientAccessPanel from "./client-access-panel";
 import AccountingOperationsWorkspace from "./accounting-operations-workspace";
+import DocumentsWorkspace from "./documents-workspace";
 import { getCachedJson, invalidateClientCache } from "../lib/client-data-cache";
+import "./performance-status.css";
+import { continueSalesEntry, nextInvoicePreview } from "../lib/invoice-entry-flow";
+import { invoiceDraftNumber, invalidInvoiceLine, type InvoiceDraftNumber } from "../lib/invoice-line-entry";
+import "./invoice-entry.css";
+import { amountInWords } from "../lib/amount-in-words";
+import { voucherPrintHtml } from "../lib/voucher-print";
+import VoucherPrintPreview from "./voucher-print-preview";
 
 const nav = [
   "Overview",
   "Sales",
+  "Quotations",
   "Purchases",
   "Accounting",
   "Payments",
@@ -34,7 +45,7 @@ const nav = [
   "Team",
 ];
 const navFeature: Record<string, string> = {
-  Sales: "sales", Purchases: "purchases", Payments: "accounting", Orders: "orders",
+  Sales: "sales", Quotations: "sales", Purchases: "purchases", Payments: "accounting", Orders: "orders",
   Cheques: "cheques", Parties: "accounting", Inventory: "inventory", Stock: "inventory",
   "Cash & Bank": "cash_bank", Expenses: "accounting", Reports: "reports",
   Leads: "crm", Tasks: "tasks", Activity: "crm", Team: "accounting",
@@ -82,8 +93,8 @@ const adDate = (value: string) => {
 type SaleLine = {
   productId: string;
   name: string;
-  quantity: number;
-  rate: number;
+  quantity: InvoiceDraftNumber;
+  rate: InvoiceDraftNumber;
   unit?: string;
   itemType?: string;
 };
@@ -91,17 +102,18 @@ const emptySaleLine = (): SaleLine => ({
   productId: "",
   name: "",
   quantity: 1,
-  rate: 0,
+  rate: "",
   unit: "pcs",
   itemType: "finished_good",
 });
 
 export default function Home() {
+  const [voucherPrint, setVoucherPrint] = useState<string | null>(null);
+  const voucherDocument = useRef<HTMLDivElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [entitlements, setEntitlements] = useState<Record<string, boolean>>({});
   const [clientToday, setClientToday] = useState("");
   const [active, setActive] = useState("Overview");
-  const [range, setRange] = useState("This month");
   const [modal, setModal] = useState<
     "sale" | "payment" | "purchase" | "expense" | "party" | "product" | "production" | null
   >(null);
@@ -110,7 +122,8 @@ export default function Home() {
   const [formParty, setFormParty] = useState("");
   const [parties, setParties] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [monthlyPerformance, setMonthlyPerformance] = useState<any[]>([]);
+  const [monthlyPerformance, setMonthlyPerformance] = useState<OverviewMonth[]>([]);
+  const [overviewThrough, setOverviewThrough] = useState("");
   const [members, setMembers] = useState<any[]>([]);
   const [moneyAccounts, setMoneyAccounts] = useState<any[]>([]);
   const [currentMember, setCurrentMember] = useState<any>(null);
@@ -132,11 +145,25 @@ export default function Home() {
   const [chequeBanks, setChequeBanks] = useState<any[]>([]);
   const [particulars, setParticulars] = useState("");
   const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
+  const salesPartyInput = useRef<HTMLSelectElement>(null);
+  const invoiceScroll = useRef<HTMLDivElement>(null);
+  const [lastSavedSale, setLastSavedSale] = useState<string | null>(null);
+  const [snapshotSync, setSnapshotSync] = useState<"idle" | "loading" | "failed">("idle");
+  const pendingRefresh = useRef<{ fiscalYearId: string; label: string } | null>(null);
   const [calendar, setCalendar] = useState<"BS" | "AD">("BS");
   const [fiscalYears, setFiscalYears] = useState<any[]>([]);
   const [fiscalYear, setFiscalYear] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [saleLines, setSaleLines] = useState<SaleLine[]>([emptySaleLine()]);
+  const lineNameInputs = useRef<(HTMLInputElement | null)[]>([]);
+  const pendingLineFocus = useRef<number | null>(null);
+  useEffect(() => {
+    const index = pendingLineFocus.current;
+    if (index === null) return;
+    pendingLineFocus.current = null;
+    lineNameInputs.current[index]?.focus();
+  }, [saleLines]);
   const [taxPercent, setTaxPercent] = useState(13);
   const [billCategory, setBillCategory] = useState("vat");
   const [supplierBillNo, setSupplierBillNo] = useState("");
@@ -221,6 +248,7 @@ export default function Home() {
     );
     setTotals(data.totals);
     setMonthlyPerformance(data.monthlyPerformance || []);
+    setOverviewThrough(data.overviewThrough || "");
     setMembers(data.members || []);
     setMoneyAccounts(data.moneyAccounts || []);
     setCurrentMember(data.currentMember || null);
@@ -242,9 +270,10 @@ export default function Home() {
   useEffect(() => {
     try { const cached=sessionStorage.getItem("hae-snapshot-current");if(cached)applySnapshot(JSON.parse(cached)); } catch {}
     const controller=new AbortController();
+    const request = ++fiscalRequest.current;
     fetch("/api/accounting",{signal:controller.signal,cache:"no-store"})
       .then(async(r) => {const data=await r.json();if(!r.ok)throw new Error(data.error||"Database could not be loaded");return data})
-      .then(applySnapshot)
+      .then(data => { if (request === fiscalRequest.current) applySnapshot(data); })
       .catch((error) => {if(error?.name!=="AbortError")setNotice(error instanceof Error?error.message:"Database could not be loaded")});
     return()=>controller.abort();
   }, []);
@@ -260,6 +289,31 @@ export default function Home() {
   }
 
   async function save(kind: string) {
+    if (saveLock.current) return;
+    if (snapshotSync !== "idle") { setNotice("Your last entry is saved. Refresh the latest totals before saving another entry."); return; }
+    saveLock.current = true; setSaving(true);
+    try { await saveEntry(kind); }
+    catch { setNotice("Connection interrupted. Save status is not confirmed—check the register before submitting again to avoid a duplicate."); }
+    finally { saveLock.current = false; setSaving(false); }
+  }
+
+  async function refreshSavedAccounting(fiscalYearId: string, label: string) {
+    pendingRefresh.current = { fiscalYearId, label };
+    setSnapshotSync("loading");
+    const request = ++fiscalRequest.current;
+    try {
+      const response = await fetch(`/api/accounting?fy=${encodeURIComponent(fiscalYearId)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not refresh totals");
+      if (request === fiscalRequest.current) applySnapshot(data);
+      setSnapshotSync("idle"); pendingRefresh.current = null;
+    } catch {
+      setSnapshotSync("failed");
+      setNotice(`${label} is already saved. Totals could not refresh; retry the refresh, not the entry.`);
+    }
+  }
+
+  async function saveEntry(kind: string) {
     if (modal === "production") {
       const consumptions = productionInputs.filter((row) => row.productId && Number(row.quantity) > 0);
       if (!outputProductId || Number(outputQuantity) <= 0 || !consumptions.length) {
@@ -275,8 +329,15 @@ export default function Home() {
       applySnapshot(refreshed); setModal(null); setOutputProductId(""); setOutputQuantity(""); setProductionInputs([{ productId: "", quantity: 0 }]); setParticulars(""); setNotice(`Production batch ${data.batch_no} saved`); return;
     }
     const party = parties.find((p) => p.name === formParty);
+    if (modal === "sale" || modal === "purchase") {
+      const invalidIndex = invalidInvoiceLine(saleLines);
+      if (invalidIndex !== -1) {
+        setNotice(`Item ${invalidIndex + 1}: enter a name, quantity greater than zero, and a rate (0 is allowed).`);
+        return;
+      }
+    }
     const validLines = saleLines.filter(
-      (l) => l.name.trim() && l.quantity > 0 && l.rate >= 0,
+      (l) => l.name.trim() && l.quantity !== "" && l.quantity > 0 && l.rate !== "" && l.rate >= 0,
     );
     if (
       (modal === "sale" || modal === "purchase") &&
@@ -308,7 +369,7 @@ export default function Home() {
     setSaving(true);
     const response = await fetch("/api/accounting", {
       method: editingVoucherId || editingProductId ? "PUT" : "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Prefer: "return=minimal" },
       body: JSON.stringify({
         voucherId: editingVoucherId || undefined,
         productId: editingProductId || undefined,
@@ -334,8 +395,8 @@ export default function Home() {
         lines: validLines.map((l) => ({
           product_id: l.productId || null,
           name: l.name,
-          quantity: l.quantity,
-          rate: l.rate,
+          quantity: Number(l.quantity),
+          rate: Number(l.rate),
           unit: l.unit || "pcs",
           item_type: l.itemType || "finished_good",
         })),
@@ -370,9 +431,23 @@ export default function Home() {
     invalidateClientCache("funds:");
     invalidateClientCache("crm:");
     invalidateClientCache("orders:");
-    applySnapshot(data);
-    void refreshChequeCounts();
-    setModal(null);
+    if (data.saved && data.refreshRequired) void refreshSavedAccounting(data.fiscalYearId, kind);
+    else applySnapshot(data);
+    const startNextSale = continueSalesEntry(modal, editingVoucherId);
+    if (startNextSale) {
+      const savedNumber = data.savedRecord?.number || data.savedRecord?.sequence;
+      setLastSavedSale(savedNumber ? String(savedNumber) : "");
+      const previewNumber = nextInvoicePreview(data.savedRecord?.sequence);
+      if (previewNumber) setNextNumbers(current => ({ ...current, sale: previewNumber }));
+      setFormParty("");
+      setDiscountPercent(0);
+      setSupplierBillNo("");
+      // Keep the selected date and VAT treatment for batch entry, but no customer/items/discount.
+      requestAnimationFrame(() => {
+        invoiceScroll.current?.scrollTo({ top: 0 });
+        salesPartyInput.current?.focus({ preventScroll: true });
+      });
+    } else setModal(null);
     setEditingVoucherId("");
     setEditingProductId("");
     setAmount("");
@@ -393,11 +468,11 @@ export default function Home() {
     setOpeningBalance("");
     setOpeningSide("debit");
     setDueDate("");
-    setNotice(`${kind} saved successfully`);
-    refreshChequeCounts();
-    window.setTimeout(() => setNotice(""), 2600);
+    setNotice(startNextSale ? "Invoice saved. Ready for the next bill." : `${kind} saved successfully`);
+    void refreshChequeCounts();
   }
   function openSale() {
+    setLastSavedSale(null);
     setEditingVoucherId("");
     setModal("sale");
     setFormParty(parties[0]?.name || "__new__");
@@ -458,6 +533,10 @@ export default function Home() {
       lines.map((l, i) => (i === index ? { ...l, ...patch } : l)),
     );
   }
+  function addSaleLine() {
+    pendingLineFocus.current = saleLines.length;
+    setSaleLines((lines) => [...lines, emptySaleLine()]);
+  }
   function chooseProduct(index: number, id: string) {
     const product = products.find((p) => p.id === id);
     updateSaleLine(
@@ -472,7 +551,7 @@ export default function Home() {
                 : product.sale_price,
             ),
           }
-        : { productId: "", name: "", rate: 0 },
+        : { productId: "", name: "", rate: "" },
     );
   }
   function wheelNumberInput(event: any) {
@@ -530,10 +609,7 @@ export default function Home() {
   const lowStockCount = products.filter(
     (product) => Number(product.stock_qty) <= Number(product.low_stock_at),
   ).length;
-  const performanceMax = Math.max(
-    1,
-    ...monthlyPerformance.flatMap((month) => [Number(month.sales || 0), Number(month.collections || 0)]),
-  );
+  const overviewBs = overviewThrough ? adToBsParts(overviewThrough) : null;
   const recentTransactions = transactions.slice(0, 8);
   const topOutstanding = visibleParties.filter((party) => Number(party.balance) > 0).slice(0, 6);
   const registerTransactions = transactions.filter((transaction) =>
@@ -627,6 +703,7 @@ export default function Home() {
           <div className="fy-tools">
             <select
               aria-label="Financial year"
+              disabled={saving || snapshotSync !== "idle"}
               value={fiscalYear?.id || ""}
               onChange={(e) => changeFiscalYear(e.target.value)}
             >
@@ -664,6 +741,7 @@ export default function Home() {
         </header>
 
         <div className="page">
+          {snapshotSync !== "idle" && <div role="status" className="snapshot-sync"><span>{snapshotSync === "loading" ? "Saved successfully · updating balances and stock…" : "Your entry is saved. Latest totals could not be loaded."}</span>{snapshotSync === "failed" && <button onClick={() => { const pending = pendingRefresh.current; if (pending) void refreshSavedAccounting(pending.fiscalYearId, pending.label); }}>Retry refresh</button>}</div>}
           <div className="title-row">
             <div>
               <p>
@@ -680,16 +758,7 @@ export default function Home() {
               <span className={`year-status ${fiscalYear?.status}`}>
                 {fiscalYear?.status === "closed" ? "Historical year" : "Current year"}
               </span>
-              <button
-                className="date-pill"
-                onClick={() =>
-                  setRange(
-                    range === "This month" ? "This fiscal year" : "This month",
-                  )
-                }
-              >
-                ◷ &nbsp;{range}
-              </button>
+              <span className="date-pill">FY {fiscalYear?.label_bs || "—"}</span>
             </div>
           </div>
 
@@ -722,34 +791,7 @@ export default function Home() {
               </section>
 
               <div className="dashboard-grid">
-                <article className="activity card">
-                  <div className="card-title">
-                    <div>
-                      <h3>Sales & Collections</h3>
-                      <p>Last six Nepali months · FY {fiscalYear?.label_bs}</p>
-                    </div>
-                    <div className="legend">
-                      <span>
-                        <i className="leg-sales"></i>Sales
-                      </span>
-                      <span>
-                        <i className="leg-cash"></i>Collections
-                      </span>
-                    </div>
-                  </div>
-                  <div className="performance-chart" aria-label="Monthly sales and collections chart">
-                    {monthlyPerformance.map((month) => (
-                      <div className="performance-month" key={`${month.year}-${month.month}`}>
-                        <div className="performance-bars">
-                          <i className="performance-bar sales" title={`Sales ${money(month.sales)}`} style={{ height: `${Math.max(month.sales ? 7 : 1, (Number(month.sales) / performanceMax) * 100)}%` }} />
-                          <i className="performance-bar collections" title={`Collections ${money(month.collections)}`} style={{ height: `${Math.max(month.collections ? 7 : 1, (Number(month.collections) / performanceMax) * 100)}%` }} />
-                        </div>
-                        <strong>{month.label}</strong>
-                      </div>
-                    ))}
-                    {!monthlyPerformance.length && <div className="dashboard-empty">Monthly figures will appear after the first transaction.</div>}
-                  </div>
-                </article>
+                <OverviewAnalytics key={fiscalYear?.id} months={monthlyPerformance} fiscalLabel={fiscalYear?.label_bs || "—"} currentKey={overviewBs ? `${overviewBs.year}-${overviewBs.month}` : ""} onOpen={target => { if (visibleNav.includes(target)) setActive(target); else setNotice("This module is not enabled for your company."); }} />
 
                 <article className="quick card">
                   <div className="card-title">
@@ -1005,6 +1047,8 @@ export default function Home() {
                 </div>
               </article>
             </section>
+          ) : active === "Quotations" ? (
+            <DocumentsWorkspace key={fiscalYear?.id} fiscalYear={fiscalYear} parties={parties} products={products} />
           ) : active === "Accounting" ? (
             <AccountingOperationsWorkspace mode="accounting" parties={parties} products={products} moneyAccounts={moneyAccounts} members={members} fiscalYear={fiscalYear} onNotice={setNotice} onRefresh={() => { invalidateClientCache(); if (fiscalYear?.id) void changeFiscalYear(fiscalYear.id); }} />
           ) : active === "Manufacturing" ? (
@@ -1248,7 +1292,7 @@ export default function Home() {
               <button aria-label="Close voucher details" onClick={() => setVoucherDetail(null)}>×</button>
             </div>
             {!detailLoading && (
-              <div className="voucher-document">
+              <div className="voucher-document" ref={voucherDocument}>
                 <div className="voucher-company">
                   {company.logo_url && <img src={company.logo_url} alt="" />}
                   <div><strong>{company.name}</strong><span>Official accounting record</span></div>
@@ -1263,15 +1307,19 @@ export default function Home() {
                 <div className="voucher-audit"><span><small>GENERATED BY</small><strong>{voucherDetail.generator?.name || "Office"}</strong></span>{voucherDetail.handler?.name&&<span><small>COLLECTED / HANDLED BY</small><strong>{voucherDetail.handler.name}</strong></span>}{voucherDetail.money_account?.name&&<span><small>CASH / BANK ACCOUNT</small><strong>{voucherDetail.money_account.name}</strong></span>}</div>
                 {voucherDetail.lines?.length > 0 && <div className="voucher-lines"><table><thead><tr><th>#</th><th>PRODUCT / DESCRIPTION</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>{voucherDetail.lines.map((line:any,index:number)=><tr key={line.id}><td>{index+1}</td><td><strong>{line.description || line.products?.name}</strong><small>{[line.products?.sku,line.products?.unit].filter(Boolean).join(" · ")}</small></td><td>{Number(line.quantity).toLocaleString()}</td><td>{money(Number(line.rate))}</td><td><strong>{money(Number(line.amount))}</strong></td></tr>)}</tbody></table></div>}
                 {voucherDetail.voucher_type === "receipt" && <div className="receipt-panel"><div><small>AMOUNT RECEIVED</small><strong>{money(Number(voucherDetail.total))}</strong></div><div><small>PAYMENT MODE</small><strong>{voucherDetail.payment_mode || "Cash"}</strong></div>{voucherDetail.payment_mode === "Cheque" && <><div><small>CHEQUE / BANK</small><strong>{voucherDetail.cheque_no || "—"} · {voucherDetail.cheque_bank || "—"}</strong></div><div><small>CLEARANCE DATE</small><strong>{voucherDetail.cheque_exchange_date ? adDate(voucherDetail.cheque_exchange_date) : "—"}</strong><span className={`cheque-status ${voucherDetail.cheque_status}`}>{voucherDetail.cheque_status}</span></div></>}</div>}
+                <div className="voucher-settlement">
                 {voucherDetail.voucher_type === "sale" && <div className="voucher-totals"><div><span>Subtotal</span><strong>{money(Number(voucherDetail.subtotal))}</strong></div><div><span>Discount ({Number(voucherDetail.discount_percent)}%)</span><strong>− {money(Number(voucherDetail.discount_amount))}</strong></div><div><span>VAT / Tax ({Number(voucherDetail.tax_percent)}%)</span><strong>＋ {money(Number(voucherDetail.tax_amount))}</strong></div><div className="grand"><span>Grand total</span><strong>{money(Number(voucherDetail.total))}</strong></div></div>}
+                <div className="amount-in-words"><small>AMOUNT IN WORDS</small><strong>{amountInWords(Number(voucherDetail.total))}</strong></div>
+                </div>
                 {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
               </div>
             )}
-            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" onClick={() => printDocument("voucher")}>Print / PDF</button></div>
+            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`)); }}>Print / PDF</button></div>
           </section>
         </div>
       )}
 
+      {voucherPrint && <VoucherPrintPreview html={voucherPrint} close={() => setVoucherPrint(null)} />}
       {modal === "production" && (
         <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
           <section className="modal production-modal" onMouseDown={(e) => e.stopPropagation()}>
@@ -1290,7 +1338,7 @@ export default function Home() {
       )}
 
       {modal && !["party", "product", "production"].includes(modal) && (
-        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+        <div className="modal-backdrop" onMouseDown={() => { if (!saveLock.current) setModal(null); }}>
           <section
             className={`modal ${modal === "sale" || modal === "purchase" ? "invoice-modal" : ""}`}
             onMouseDown={(e) => e.stopPropagation()}
@@ -1317,9 +1365,10 @@ export default function Home() {
                         : editingVoucherId ? "Edit payment receipt" : "Receive payment"}
                 </h2>
               </div>
-              <button onClick={() => setModal(null)}>×</button>
+              <button aria-label="Close invoice or receipt" disabled={saving} onClick={() => setModal(null)}>×</button>
             </div>
-            <div className="form-grid">
+            <div className="form-grid" ref={invoiceScroll}>
+              {modal === "sale" && !editingVoucherId && lastSavedSale !== null && <div className="snapshot-sync full" role="status"><span>Invoice{lastSavedSale ? ` #${lastSavedSale}` : ""} saved. {snapshotSync === "loading" ? "Enter the next bill while stock and numbering update…" : snapshotSync === "failed" ? "Refresh failed. Your saved bill is safe; retry the refresh before saving the next one." : "Ready for the next invoice."}</span>{snapshotSync === "failed" && <button onClick={() => { const pending = pendingRefresh.current; if (pending) void refreshSavedAccounting(pending.fiscalYearId, pending.label); }}>Retry refresh</button>}</div>}
               {modal !== "expense" && (
                 <>
                   {(modal === "sale" || modal === "purchase") && (
@@ -1330,12 +1379,14 @@ export default function Home() {
                       ? "Supplier / Party"
                       : "Party / Customer"}
                     <select
+                      ref={modal === "sale" ? salesPartyInput : undefined}
                       value={formParty}
                       onChange={(e) => {
                         setFormParty(e.target.value);
                         if (e.target.value !== "__new__") setNewPartyName("");
                       }}
                     >
+                      <option value="" disabled>Select a party / customer</option>
                       {parties.map((p) => (
                         <option key={p.name} value={p.name}>
                           {p.name}
@@ -1381,6 +1432,7 @@ export default function Home() {
                           : nextNumbers.expense,
                   )}
                 />
+                {modal === "sale" && !editingVoucherId && <small>{snapshotSync === "loading" ? "Checking latest number…" : "Automatic number · final number assigned when saved"}</small>}
               </label>
               <label>
                 Generated by
@@ -1404,7 +1456,9 @@ export default function Home() {
                   {saleLines.map((line, index) => (
                     <div className="invoice-line" key={index}>
                       <div>
+                        <span className="invoice-item-number">Item {index + 1}</span>
                         <select
+                          aria-label={`Product ${index + 1}`}
                           value={line.productId}
                           onChange={(e) => chooseProduct(index, e.target.value)}
                         >
@@ -1416,7 +1470,7 @@ export default function Home() {
                           ))}
                         </select>
                         {!line.productId && (
-                          <><input value={line.name} onChange={(e) => updateSaleLine(index, { name: e.target.value })} placeholder="Type item name" />{modal === "purchase" && <div className="purchase-item-meta"><input list="product-unit-options" aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})} placeholder="Type unit"/><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
+                          <><input ref={element => { lineNameInputs.current[index] = element; }} aria-label={`Item name ${index + 1}`} value={line.name} onChange={(e) => updateSaleLine(index, { name: e.target.value })} placeholder="Type item name" />{modal === "purchase" && <div className="purchase-item-meta"><input list="product-unit-options" aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})} placeholder="Type unit"/><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
                         )}
                       </div>
                       <input
@@ -1426,9 +1480,11 @@ export default function Home() {
                         step="0.001"
                         onWheel={wheelNumberInput}
                         value={line.quantity}
+                        placeholder="Qty"
+                        onFocus={event => event.currentTarget.select()}
                         onChange={(e) =>
                           updateSaleLine(index, {
-                            quantity: Number(e.target.value),
+                            quantity: invoiceDraftNumber(e.target.value),
                           })
                         }
                       />
@@ -1439,13 +1495,15 @@ export default function Home() {
                         step="0.01"
                         onWheel={wheelNumberInput}
                         value={line.rate}
+                        placeholder="Rate"
+                        onFocus={event => event.currentTarget.select()}
                         onChange={(e) =>
                           updateSaleLine(index, {
-                            rate: Number(e.target.value),
+                            rate: invoiceDraftNumber(e.target.value),
                           })
                         }
                       />
-                      <strong>{money(line.quantity * line.rate)}</strong>
+                      <strong>{money(Number(line.quantity) * Number(line.rate))}</strong>
                       <button
                         aria-label={`Remove item ${index + 1}`}
                         disabled={saleLines.length === 1}
@@ -1461,9 +1519,7 @@ export default function Home() {
                   ))}
                   <button
                     className="add-line"
-                    onClick={() =>
-                      setSaleLines((lines) => [...lines, emptySaleLine()])
-                    }
+                    onClick={addSaleLine}
                   >
                     ＋ Add another product
                   </button>
@@ -1519,6 +1575,7 @@ export default function Home() {
                       </strong>
                     </div>
                   </div>
+                  <div className="amount-in-words"><small>AMOUNT IN WORDS</small><strong>{amountInWords(saleGrand)}</strong></div>
                 </div>
               ) : (
                 <>
@@ -1583,10 +1640,10 @@ export default function Home() {
                   </strong>
                 </button>
               )}
-              <button onClick={() => {setModal(null);setEditingVoucherId("")}}>Cancel</button>
+              <button disabled={saving} onClick={() => {setModal(null);setEditingVoucherId("")}}>{modal === "sale" && !editingVoucherId ? "Back / Close" : "Cancel"}</button>
               <button
                 className="primary"
-                disabled={saving}
+                disabled={saving || snapshotSync !== "idle"}
                 onClick={() =>
                   save(
                     modal === "sale"
@@ -1602,7 +1659,7 @@ export default function Home() {
                 {saving
                   ? "Saving…"
                   : modal === "sale"
-                    ? editingVoucherId ? "Update invoice" : "Save invoice"
+                    ? editingVoucherId ? "Update invoice" : snapshotSync === "loading" ? "Updating stock & number…" : "Save & next invoice"
                     : modal === "purchase"
                       ? "Save purchase"
                       : modal === "expense"
@@ -1750,7 +1807,7 @@ export default function Home() {
               <button onClick={() => setModal(null)}>Cancel</button>
               <button
                 className="primary"
-                disabled={saving}
+                disabled={saving || snapshotSync !== "idle"}
                 onClick={() => save(modal === "party" ? "Party" : "Product")}
               >
                 {saving

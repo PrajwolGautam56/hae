@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import { formatBs } from "../lib/nepali-date";
-import { printDocument } from "../lib/export-data";
+import CommercialDocumentPreview from "./commercial-document-preview";
 
 type Props = {
   mode: "accounting" | "manufacturing";
@@ -65,6 +65,17 @@ export default function AccountingOperationsWorkspace({ mode, parties, products,
   const [payrollPeriod, setPayrollPeriod] = useState("");
   const [payrollLines, setPayrollLines] = useState<PayrollLine[]>([payrollLine()]);
   const [selectedOrder, setSelectedOrder] = useState<any>(null);
+  const [printableOrder, setPrintableOrder] = useState<any>(null);
+  function printDocument(mode: string) {
+    if (mode !== "report" || !selectedOrder) return;
+    const o = selectedOrder;
+    setPrintableOrder({ document_type: "purchase_order", sequence_no: o.sequence_no, document_date: o.order_date, status: o.status, payload: {
+      issuer: { ...data.company, pan: data.company.settings?.pan }, recipientName: o.supplier?.name, recipientAddress: o.supplier?.place, recipientPan: o.supplier?.tax_no,
+      fiscalYear: fiscalYear.label_bs, generatedBy: o.creator?.name, lines: o.purchase_order_lines,
+      subtotal: o.subtotal, discount: o.discount_amount, discountPercent: o.discount_percent, taxable: Number(o.subtotal) - Number(o.discount_amount), tax: o.tax_amount, taxPercent: o.tax_percent, total: o.total, taxMode: Number(o.tax_percent) > 0 ? "exclusive" : "none",
+      subject: o.supplier_reference, terms: o.narration, deliveryTerms: o.expected_date ? `Expected ${formatBs(o.expected_date)}` : "",
+    } });
+  }
 
   const rawProducts = useMemo(() => products.filter((product) => ["raw_material", "packaging"].includes(product.item_type)), [products]);
   const finishedProducts = useMemo(() => products.filter((product) => ["finished_good", "resale_good"].includes(product.item_type)), [products]);
@@ -175,6 +186,7 @@ export default function AccountingOperationsWorkspace({ mode, parties, products,
 
     {selectedOrder && <div className="modal-backdrop" onMouseDown={() => setSelectedOrder(null)}><section className="modal operation-modal po-document" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><small>PURCHASE ORDER · FY {fiscalYear.label_bs}</small><h2>PO #{selectedOrder.sequence_no}</h2></div><button onClick={() => setSelectedOrder(null)}>×</button></div><div className="po-party"><div><small>SUPPLIER</small><strong>{selectedOrder.supplier?.name}</strong><span>{selectedOrder.supplier?.place || ""}</span></div><div><small>ORDER / EXPECTED</small><strong>{formatBs(selectedOrder.order_date)}</strong><span>{selectedOrder.expected_date ? formatBs(selectedOrder.expected_date) : "No expected date"}</span></div></div><div className="table-wrap"><table><thead><tr><th>ITEM</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>{selectedOrder.purchase_order_lines.map((line: any) => <tr key={line.id}><td>{line.description}</td><td>{line.quantity} {line.unit}</td><td>{money(line.rate)}</td><td>{money(line.amount)}</td></tr>)}</tbody></table></div><div className="po-total"><span>Total</span><strong>{money(selectedOrder.total)}</strong></div><div className="modal-actions"><button onClick={() => printDocument("report")}>Print / PDF</button>{selectedOrder.status === "draft" && <button onClick={() => updateOrder(selectedOrder, "sent")} disabled={saving}>Mark sent</button>}{!["billed", "cancelled"].includes(selectedOrder.status) && <button className="primary" onClick={() => updateOrder(selectedOrder, "billed")} disabled={saving}>Receive & create purchase invoice</button>}</div></section></div>}
 
+    {printableOrder && <CommercialDocumentPreview record={printableOrder} close={() => setPrintableOrder(null)} />}
     {action && <div className="modal-backdrop" onMouseDown={() => setAction("")}><section className="modal operation-modal" onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><small>{actionMeta[action]?.code} · FY {fiscalYear.label_bs}</small><h2>{actionMeta[action]?.title}</h2><p>{actionMeta[action]?.description}</p></div><button onClick={() => setAction("")}>×</button></div><div className="operation-form">
       <label>Date (BS)<BsDateInput min={fiscalYear.start_ad} max={fiscalYear.end_ad} value={date} onChange={setDate} /></label>
       {action === "purchase_order" && <><label>Supplier<select value={partyId} onChange={(event) => setPartyId(event.target.value)}><option value="">Select supplier</option>{parties.filter((party) => ["supplier", "both"].includes(party.party_type)).map((party) => <option key={party.id} value={party.id}>{party.name}</option>)}</select></label><label>Expected delivery (BS)<BsDateInput value={expectedDate} onChange={setExpectedDate} /></label><label>Supplier reference<input value={supplierReference} onChange={(event) => setSupplierReference(event.target.value)} placeholder="Optional quotation / PI reference" /></label></>}

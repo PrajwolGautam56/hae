@@ -85,7 +85,7 @@ type Payload = {
   audits: Audit[];
   entitlements: Entitlement[];
   companyUsers: CompanyUser[];
-  companyBranding: {id:string;logo_url:string|null}[];
+  companyBranding: {id:string;logo_url:string|null;address?:string|null;phone?:string|null;settings?:{pan?:string|null}}[];
   dnsTarget?: string | null;
   unifiedReady: boolean;
   unifiedError?: string;
@@ -981,6 +981,9 @@ function Editor({
             <Field label="Company name">
               <input name="name" required defaultValue={company?.name} />
             </Field>
+            <Field label="Company PAN / VAT number (optional)"><input name="pan" maxLength={50} defaultValue={data.companyBranding?.find(b => b.id === company?.app_company_id)?.settings?.pan || ""} /></Field>
+            <Field label="Company address (optional)"><input name="address" defaultValue={data.companyBranding?.find(b => b.id === company?.app_company_id)?.address || ""} /></Field>
+            <Field label="Company phone (optional)"><input name="phone" defaultValue={data.companyBranding?.find(b => b.id === company?.app_company_id)?.phone || ""} /></Field>
             <Field label="Company logo (PNG, JPEG, WebP · max 500 KB)" wide>
               <input type="file" accept="image/png,image/jpeg,image/webp" onChange={event=>{const file=event.target.files?.[0];setLogoError("");if(!file)return;if(file.size>500*1024||!["image/png","image/jpeg","image/webp"].includes(file.type)){setLogoError("Choose a PNG, JPEG or WebP image below 500 KB");return;}const reader=new FileReader();reader.onload=()=>setLogoData(String(reader.result));reader.readAsDataURL(file);}}/>
               {(logoData||data.companyBranding?.find(b=>b.id===company?.app_company_id)?.logo_url)&&<img src={logoData||data.companyBranding.find(b=>b.id===company?.app_company_id)!.logo_url!} alt="Company logo preview" style={{maxWidth:160,maxHeight:100,objectFit:"contain"}}/>}

@@ -4,6 +4,7 @@ type CacheEnvelope<T> = { data: T; savedAt: number };
 
 const memory = new Map<string, CacheEnvelope<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
+const generations = new Map<string, number>();
 const storagePrefix = "hae-client-cache:";
 
 function storageKey(key: string) {
@@ -53,19 +54,25 @@ export async function getCachedJson<T>(
   const existing = inflight.get(key) as Promise<T> | undefined;
   if (existing) return existing;
 
+  const generation = generations.get(key) || 0;
   const request = fetch(url, { cache: "no-store" })
     .then(async (response) => {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error || "Data could not be loaded");
-      setClientCache(key, payload);
+      if ((generations.get(key) || 0) === generation) setClientCache(key, payload);
       return payload as T;
     })
-    .finally(() => inflight.delete(key));
+    .finally(() => { if (inflight.get(key) === request) inflight.delete(key); });
   inflight.set(key, request);
   return request;
 }
 
 export function invalidateClientCache(prefix?: string) {
+  // An older read must not overwrite data after a confirmed mutation/company switch.
+  for (const key of new Set([...memory.keys(), ...inflight.keys()])) if (!prefix || key.startsWith(prefix)) {
+    generations.set(key, (generations.get(key) || 0) + 1);
+    inflight.delete(key);
+  }
   for (const key of [...memory.keys()]) if (!prefix || key.startsWith(prefix)) memory.delete(key);
   if (typeof window === "undefined") return;
   try {

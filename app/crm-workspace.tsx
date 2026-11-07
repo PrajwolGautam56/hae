@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import { formatBs } from "../lib/nepali-date";
 import AdminAccessPanel from "./admin-access-panel";
+import TaskWorkspace from "./task-workspace";
 import { getCachedJson, peekClientCache, setClientCache } from "../lib/client-data-cache";
 import { ALL_NEPAL_DISTRICTS, leadLocationLabel, NEPAL_DISTRICTS, NEPAL_PROVINCES, provinceForDistrict } from "../lib/nepal-address";
 
@@ -30,7 +31,7 @@ export default function CrmWorkspace({ section, onNotice }: CrmProps) {
   async function load(force = false) {
     if (!peekClientCache("crm:snapshot")) setLoading(true);
     try {
-      const payload = await getCachedJson<any>("crm:snapshot", "/api/crm", { maxAgeMs: 30_000, force });
+      const payload = await getCachedJson<any>("crm:snapshot", section === "Tasks" ? "/api/crm?section=tasks" : "/api/crm", { maxAgeMs: 30_000, force });
       setData(payload);
       if (!selectedLead && payload.leads[0]) setSelectedLead(payload.leads[0].id);
     } catch (e) { onNotice(e instanceof Error ? e.message : "CRM could not load"); }
@@ -45,7 +46,8 @@ export default function CrmWorkspace({ section, onNotice }: CrmProps) {
       if (!response.ok) throw new Error(next.error);
       setClientCache("crm:snapshot", next); setData(next); setDialog(null); setEditingLeadId(""); setForm({ source: "social_media", role: "staff", taskType: "general", priority: "medium", activityType: "call", targetType: "lead" });
       onNotice("Saved successfully");
-    } catch (e) { onNotice(e instanceof Error ? e.message : "Could not save"); }
+      return true;
+    } catch (e) { onNotice(e instanceof Error ? e.message : "Could not save"); if (section === "Tasks") throw e; return false; }
   }
 
   const lead = data.leads.find((x: any) => x.id === selectedLead);
@@ -96,6 +98,7 @@ export default function CrmWorkspace({ section, onNotice }: CrmProps) {
   const filterDistricts = provinceFilter === "all" ? ALL_NEPAL_DISTRICTS.map((item) => item.district) : NEPAL_DISTRICTS[provinceFilter as keyof typeof NEPAL_DISTRICTS] || [];
 
   if (loading) return <section className="crm-loading">Loading CRM workspace…</section>;
+  if (section === "Tasks") return <TaskWorkspace data={data} save={act} refresh={() => load(true)} />;
   return <section className="crm-workspace">
     <div className="crm-summary">
       <article><span>ACTIVE LEADS</span><strong>{data.leads.filter((x:any) => !["won","lost"].includes(x.status)).length}</strong><small>{data.leads.length} total enquiries</small></article>

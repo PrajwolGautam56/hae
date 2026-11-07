@@ -1,0 +1,41 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { fixture, ids } from './support/work-documents-db.mjs';
+test('Postgres: task audit, concurrency guard, document numbering, rollback, isolation and retry', { skip: !process.env.PGLITE_MODULE }, async () => {
+  const {PGlite}=await import(process.env.PGLITE_MODULE);
+  const db=await fixture(PGlite);
+  try {
+    const task=async(id,input,move=false,expected=null,request=null,actor=ids.staff)=> (await db.query('select save_work_task($1,$2,$3,$4,$5,$6,$7) as id',[ids.company,actor,id,input,move,expected,request])).rows[0].id;
+    const req=randomUUID();
+    const t=await task(null,{title:'Collect payment',status:'todo',assignedTo:ids.staff},false,null,req);
+    assert.equal(await task(null,{title:'retry'},false,null,req),t);
+    const old=(await db.query('select * from work_tasks where id=$1',[t])).rows[0];
+    await task(t,{status:'in_progress'},true,old.updated_at);
+    await assert.rejects(task(t,{status:'done'},true,old.updated_at),/Another user changed/);
+    await task(t,{status:'done'},true);
+    assert.ok((await db.query('select completed_at from work_tasks where id=$1',[t])).rows[0].completed_at);
+    await task(t,{status:'todo'},true);
+    assert.equal((await db.query('select completed_at from work_tasks where id=$1',[t])).rows[0].completed_at,null);
+    assert.equal(Number((await db.query('select count(*) from crm_activities where task_id=$1',[t])).rows[0].count),4);
+    await assert.rejects(task(t,{status:'done'},true,null,null,ids.otherStaff),/Active company member/);
+    await assert.rejects(task(null,{title:'Bad owner',assignedTo:ids.otherStaff}),/active assignee/);
+    const base={documentType:'quotation',date:'2026-09-26',recipientName:'Buyer',lines:[{description:'Oil',quantity:1,rate:113,unit:'litre'}],taxMode:'inclusive',taxPercent:13,discountPercent:0};
+    const issue=async(input,request=randomUUID(),company=ids.company,fy=ids.fy,actor=ids.staff)=>(await db.query('select (issue_commercial_document($1,$2,$3,$4,$5)).*',[company,fy,actor,request,input])).rows[0];
+    const docReq=randomUUID();const first=await issue(base,docReq);
+    assert.equal(first.sequence_no,1);assert.equal(first.payload.tax,13);assert.equal(first.payload.taxable,100);
+    assert.equal((await issue(base,docReq)).id,first.id);
+    assert.equal((await issue(base)).sequence_no,2);
+    assert.equal((await issue({...base,documentType:'proforma'})).sequence_no,1);
+    assert.equal((await issue(base,randomUUID(),ids.other,ids.fy2,ids.otherStaff)).sequence_no,1);
+    await assert.rejects(issue(base,randomUUID(),ids.company,ids.fy2),/Fiscal year/);
+    await assert.rejects(issue(base,randomUUID(),ids.company,ids.fy,ids.otherStaff),/Active company/);
+    await assert.rejects(issue({...base,lines:[{description:'bad',quantity:-1,rate:1}]}),/Invalid item/);
+    assert.equal((await issue(base)).sequence_no,3);
+    await db.exec(`update companies set name='New brand',settings='{"pan":"999"}' where id='${ids.company}'`);
+    const saved=(await db.query('select payload from commercial_documents where id=$1',[first.id])).rows[0].payload;
+    assert.equal(saved.issuer.name,'QA Company');assert.equal(saved.issuer.pan,'123456789');
+    const privileges=(await db.query("select has_table_privilege('authenticated','commercial_documents','SELECT') as can_read,has_function_privilege('anon','issue_commercial_document(uuid,uuid,uuid,uuid,jsonb)','EXECUTE') as can_issue")).rows[0];
+    assert.equal(privileges.can_read,false);assert.equal(privileges.can_issue,false);
+  } finally { await db.close(); }
+});

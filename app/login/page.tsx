@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { invalidateClientCache } from "../../lib/client-data-cache";
 
 type CompanyOption = {
   id: string;
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const loginInFlight = useRef(false);
 
   useEffect(() => {
     void (async () => {
@@ -43,23 +45,32 @@ export default function LoginPage() {
   }, []);
 
   async function login() {
-    if (!selected) return;
+    if (!selected || loginInFlight.current) return;
+    loginInFlight.current = true;
     setBusy(true);
     setError("");
+    try {
     const response = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password, companySlug: selected.slug }),
     });
     const data = await response.json();
-    setBusy(false);
     if (!response.ok) {
       setError(data.error || "Could not sign in");
       return;
     }
     const next = new URLSearchParams(window.location.search).get("next");
+    // A successful company switch must not render the previous company's cached records.
+    invalidateClientCache();
+    try { for (const key of Object.keys(sessionStorage)) if (key.startsWith("hae-snapshot-") || key.startsWith("hae-report-")) sessionStorage.removeItem(key); } catch {}
     router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/");
-    router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not connect. Please check your connection and retry.");
+    } finally {
+      loginInFlight.current = false;
+      setBusy(false);
+    }
   }
 
   function choose(company: CompanyOption) {

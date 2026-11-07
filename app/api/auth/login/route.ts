@@ -17,10 +17,14 @@ export async function POST(request: Request) {
     const config = businessAuthConfig(selected.company.connectionKey);
     if (!config) throw new Error("Selected company authentication is not configured");
     const supabase = createClient(config.url, config.publishableKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const { data, error } = await supabase.auth.signInWithPassword({ email: String(email).trim().toLowerCase(), password: String(password) });
-    if (error || !data.session) return NextResponse.json({ error: error?.message || "Invalid login" }, { status: 401 });
     const admin = createClient(config.url, config.secretKey, { auth: { persistSession: false, autoRefreshToken: false } });
-    const businessCompany = await resolvePlatformBusinessCompany(admin, selected.company);
+    // Company resolution is independent of password verification. Neither grants access.
+    const [authentication, businessCompany] = await Promise.all([
+      supabase.auth.signInWithPassword({ email: String(email).trim().toLowerCase(), password: String(password) }),
+      resolvePlatformBusinessCompany(admin, selected.company),
+    ]);
+    const { data, error } = authentication;
+    if (error || !data.session) return NextResponse.json({ error: error?.message || "Invalid login" }, { status: 401 });
     if (!businessCompany) return NextResponse.json({ error: "This company has not been linked to its business workspace yet" }, { status: 409 });
     const { data: member } = await admin.from("team_members").select("name,role,active").eq("auth_user_id",data.user.id).eq("company_id", businessCompany.id).maybeSingle();
     if (!member?.active) return NextResponse.json({ error: "Your company account is not active. Contact an administrator." }, { status: 403 });
