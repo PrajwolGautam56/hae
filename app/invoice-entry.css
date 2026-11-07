@@ -11,3 +11,5 @@
 .amount-in-words { padding:12px; margin-top:12px; border-top:1px solid #e4e7ec; overflow-wrap:anywhere; }
 .amount-in-words small { display:block; margin-bottom:5px; color:#667085; font-size:10px; }
 .amount-in-words strong { font-size:13px; line-height:1.5; }
+.toast { display:flex; align-items:center; gap:12px; max-width:min(440px,calc(100vw - 24px)); }
+.toast button { margin-left:auto; padding:2px 5px; border:0; background:transparent; color:inherit; font-size:20px; cursor:pointer; }

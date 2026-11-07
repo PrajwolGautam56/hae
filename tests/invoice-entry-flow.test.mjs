@@ -96,3 +96,12 @@ test('rejected save preserves the draft and number without refreshing or closing
   assert.equal(state.notice, 'Stock unavailable');
   assert.deepEqual(effects, []);
 });
+
+test('repeated invoice saves restart a dismissible confirmation while refresh failures stay visible', () => {
+  assert.match(page, /setNoticeVersion\(version => version \+ 1\)/);
+  assert.match(page, /setNotice\(current => current === notice \? "" : current\)/);
+  assert.match(page, /\[notice, noticeVersion\]/);
+  assert.match(page, /lastSavedSale === null \|\| snapshotSync !== "idle"/);
+  assert.match(page, /setLastSavedSale\(null\)/);
+  assert.match(page, /aria-label="Dismiss notification"/);
+});

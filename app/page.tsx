@@ -118,6 +118,7 @@ export default function Home() {
     "sale" | "payment" | "purchase" | "expense" | "party" | "product" | "production" | null
   >(null);
   const [notice, setNotice] = useState("");
+  const [noticeVersion, setNoticeVersion] = useState(0);
   const [query, setQuery] = useState("");
   const [formParty, setFormParty] = useState("");
   const [parties, setParties] = useState<any[]>([]);
@@ -151,6 +152,16 @@ export default function Home() {
   const [lastSavedSale, setLastSavedSale] = useState<string | null>(null);
   const [snapshotSync, setSnapshotSync] = useState<"idle" | "loading" | "failed">("idle");
   const pendingRefresh = useRef<{ fiscalYearId: string; label: string } | null>(null);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(current => current === notice ? "" : current), 5000);
+    return () => window.clearTimeout(timer);
+  }, [notice, noticeVersion]);
+  useEffect(() => {
+    if (lastSavedSale === null || snapshotSync !== "idle") return;
+    const timer = window.setTimeout(() => setLastSavedSale(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [lastSavedSale, snapshotSync]);
   const [calendar, setCalendar] = useState<"BS" | "AD">("BS");
   const [fiscalYears, setFiscalYears] = useState<any[]>([]);
   const [fiscalYear, setFiscalYear] = useState<any>(null);
@@ -469,6 +480,7 @@ export default function Home() {
     setOpeningSide("debit");
     setDueDate("");
     setNotice(startNextSale ? "Invoice saved. Ready for the next bill." : `${kind} saved successfully`);
+    setNoticeVersion(version => version + 1);
     void refreshChequeCounts();
   }
   function openSale() {
@@ -1821,7 +1833,7 @@ export default function Home() {
         </div>
       )}
       <datalist id="product-unit-options">{standardUnits.map((value)=><option key={value} value={value}/>)}</datalist>
-      {notice && <div className="toast">✓ {notice}</div>}
+      {notice && <div className="toast" role="status">{notice}<button type="button" aria-label="Dismiss notification" onClick={() => setNotice("")}>×</button></div>}
       {sidebarOpen && (
         <button
           className="sidebar-backdrop"
