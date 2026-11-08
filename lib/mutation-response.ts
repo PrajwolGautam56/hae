@@ -3,7 +3,7 @@ export async function accountingMutationResponse<T>(
   prefer: string | null,
   fiscalYearId: string,
   readSnapshot: () => Promise<T>,
-  savedRecord?: { id?: string; number?: string; sequence?: number },
+  savedRecord?: { id?: string; number?: string; sequence?: number; series?: string },
 ) {
   if (prefer?.split(",").some(value => value.trim().toLowerCase() === "return=minimal")) {
     return { saved: true as const, fiscalYearId, refreshRequired: true, ...(savedRecord ? { savedRecord } : {}) };

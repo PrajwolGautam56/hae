@@ -24,3 +24,9 @@ test('actual invoice JSX prints totals and words independently of the app shell'
     assert.doesNotMatch(html,/kritechglobal|modal-backdrop|app-shell|position:fixed/);
   }
 });
+
+test('non-VAT printed invoices retain the NB prefix instead of showing only the sequence',()=>{
+  const html=fixtureHtml(3,'NB 3');
+  assert.match(html,/INVOICE NO\.<\/small><strong>NB 3<\/strong>/);
+  assert.match(html,/Sales Invoice #NB 3/);
+});

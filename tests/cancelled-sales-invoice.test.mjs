@@ -29,7 +29,7 @@ test('the editor and register expose cancelled bills without letting them be rep
   assert.match(api, /body\.cancelledSale === true/);
   assert.match(api, /record_cancelled_sales_invoice/);
   assert.match(api, /A cancelled bill cannot be edited or posted again/);
-  assert.match(api, /voucher_type,document_status,voucher_no/);
+  assert.match(api, /voucher_type,document_status,number_series,voucher_no/);
   assert.match(page, /Cancelled bill \/ reserve this invoice number/);
   assert.match(page, /Confirm cancellation/);
   assert.match(page, /document_status === "cancelled" \? "Cancelled" : "Posted"/);

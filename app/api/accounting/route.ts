@@ -48,7 +48,7 @@ async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnTy
     supabase
       .from("vouchers")
       .select(
-        "id,party_id,voucher_type,document_status,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type),ledger_entries!ledger_company_voucher_fkey(debit,credit)",
+        "id,party_id,voucher_type,document_status,number_series,voucher_no,voucher_date,payment_mode,narration,total,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,sequence_no,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,cheque_cleared_at,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type),ledger_entries!ledger_company_voucher_fkey(debit,credit)",
       )
       .eq("fiscal_year_id", fiscalYear.id)
       .order("voucher_date", { ascending: false })
@@ -127,6 +127,7 @@ async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnTy
       (v.parties as any)?.name ||
       (v.voucher_type === "expense" ? "Office Expense" : "Cash / General"),
     sequence_no: v.sequence_no,
+    number_series: v.number_series,
     generated_by: v.generated_by,
     handled_by: v.handled_by,
     generated_by_name: (v.generator as any)?.name || "Office",
@@ -181,7 +182,7 @@ async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnTy
       .map((account:any) => ({ ...account, opening_balance: Number(account.opening_balance), balance: Number(account.balance) })),
     currentMember,
     nextNumbers: Object.fromEntries(
-      ["sale", "receipt", "purchase", "expense"].map((type) => [
+      ["sale", "sale_non_vat", "receipt", "purchase", "expense"].map((type) => [
         type,
         Number(sequences?.find((row) => row.voucher_type === type)?.last_number || 0) + 1,
       ]),
@@ -201,7 +202,7 @@ export async function GET(request: Request) {
       if (!currentMember) return NextResponse.json({ error: "Active team access is required" }, { status: 401 });
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
-        .select("id,party_id,fiscal_year_id,voucher_type,document_status,voucher_no,sequence_no,voucher_date,due_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
+        .select("id,party_id,fiscal_year_id,voucher_type,document_status,number_series,voucher_no,sequence_no,voucher_date,due_date,payment_mode,narration,subtotal,discount_percent,discount_amount,tax_percent,tax_amount,bill_category,supplier_bill_no,total,cheque_no,cheque_bank,cheque_exchange_date,cheque_status,generated_by,handled_by,money_account_id,parties!vouchers_company_party_fkey(name,place,phone,tax_no),fiscal_years!vouchers_company_fiscal_year_fkey(label_bs),generator:team_members!vouchers_generated_by_fkey(name),handler:team_members!vouchers_handled_by_fkey(name),money_account:money_accounts!vouchers_company_money_account_fkey(name,account_type)")
         .eq("id", voucherId)
         .eq("company_id", selectedCompany.id)
         .single();
@@ -238,17 +239,19 @@ export async function POST(request: Request) {
     if (type === "sale" && body.cancelledSale === true) {
       if (!["admin", "manager", "accountant"].includes(currentMember.role))
         return NextResponse.json({ error: "Only an administrator, manager or accountant can reserve a cancelled bill" }, { status: 403 });
-      const { data, error } = await supabase.rpc("record_cancelled_sales_invoice", {
+      const { data, error } = await supabase.rpc("record_cancelled_sales_invoice_in_series", {
         p_company_id: initialState.company.id,
         p_fiscal_year_id: initialState.fiscalYear.id,
         p_member_id: currentMember.id,
         p_date: String(body.date || businessDate()),
         p_reason: String(body.particulars || ""),
+        p_voucher_id: null,
+        p_number_series: body.billCategory === "non_vat" ? "non_vat" : "standard",
       });
       if (error) throw error;
       return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), initialState.fiscalYear.id,
         () => snapshot(initialState.fiscalYear.id, initialState, currentMember),
-        { id: data.id, number: data.voucher_no, sequence: data.sequence_no }), { status: 201 });
+        { id: data.id, number: data.voucher_no, sequence: data.sequence_no, series: data.number_series }), { status: 201 });
     }
     if (type === "party") {
       const name = String(body.partyName || "").trim();
@@ -422,8 +425,8 @@ export async function POST(request: Request) {
       p_company_id: state.company.id,
       p_from_fiscal_year_id: state.fiscalYear.id,
     });
-    const savedVoucher = result.data as { id?: string; voucher_no?: string; sequence_no?: number } | null;
-    return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), state.fiscalYear.id, () => snapshot(state.fiscalYear.id, state, currentMember), savedVoucher ? { id: savedVoucher.id, number: savedVoucher.voucher_no, sequence: savedVoucher.sequence_no } : undefined), {
+    const savedVoucher = result.data as { id?: string; voucher_no?: string; sequence_no?: number; number_series?: string } | null;
+    return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), state.fiscalYear.id, () => snapshot(state.fiscalYear.id, state, currentMember), savedVoucher ? { id: savedVoucher.id, number: savedVoucher.voucher_no, sequence: savedVoucher.sequence_no, series: savedVoucher.number_series } : undefined), {
       status: 201,
     });
   } catch (error) {
@@ -460,15 +463,16 @@ export async function PUT(request: Request) {
       const {data: existing,error: existingError}=await supabase.from("vouchers").select("fiscal_year_id,document_status").eq("id",voucherId).eq("company_id",selectedCompany.id).single();
       if(existingError)throw existingError;
       if(existing.document_status==="cancelled")return NextResponse.json({error:"This bill is already cancelled"},{status:409});
-      const {data,error}=await supabase.rpc("record_cancelled_sales_invoice",{
+      const {data,error}=await supabase.rpc("record_cancelled_sales_invoice_in_series",{
         p_company_id:selectedCompany.id,p_fiscal_year_id:existing.fiscal_year_id,
         p_member_id:currentMember.id,p_date:String(body.date||businessDate()),
         p_reason:String(body.particulars||""),p_voucher_id:voucherId,
+        p_number_series:body.billCategory==="non_vat"?"non_vat":"standard",
       });
       if(error)throw error;
       return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"),existing.fiscal_year_id,
         () => snapshot(existing.fiscal_year_id,undefined,currentMember),
-        {id:data.id,number:data.voucher_no,sequence:data.sequence_no}));
+        {id:data.id,number:data.voucher_no,sequence:data.sequence_no,series:data.number_series}));
     }
     if(type==="bill_classification"){
       if(!["admin","manager","accountant"].includes(currentMember.role))return NextResponse.json({error:"Only an administrator, manager or accountant can classify bills"},{status:403});

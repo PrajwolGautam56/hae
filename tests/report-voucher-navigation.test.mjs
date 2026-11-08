@@ -58,10 +58,10 @@ test('a denied or missing voucher shows an error rather than another invoice',as
   assert.equal(h.state.detail,null);assert.equal(h.state.notice,'Voucher not found');
 });
 
-async function editHarness({voucher_type='sale',differentYear=false,failYear=false,document_status='posted'}={}) {
+async function editHarness({voucher_type='sale',differentYear=false,failYear=false,document_status='posted',number}={}) {
   const state={};const effects=[];
   const source=page.slice(page.indexOf('  async function editVoucher()'),page.indexOf('  const saleSubtotal'));
-  const context={voucherDetail:{id:'invoice-uuid-34',sequence_no:34,voucher_type,document_status,fiscal_year_id:differentYear?'old-year':'current-year',voucher_date:'2026-08-27',parties:{name:'Bhageshwor'},lines:[{product_id:'oil',description:'Gear Oil',quantity:10,rate:100}]},
+  const context={voucherDetail:{id:'invoice-uuid-34',sequence_no:34,voucher_no:number,voucher_type,document_status,fiscal_year_id:differentYear?'old-year':'current-year',voucher_date:'2026-08-27',parties:{name:'Bhageshwor'},lines:[{product_id:'oil',description:'Gear Oil',quantity:10,rate:100}]},
     fiscalYear:{id:'current-year'},detailRequest:{current:{}},currentMember:{id:'staff'},
     changeFiscalYear:async id=>{effects.push(`year:${id}`);if(failYear)throw new Error('Fiscal year could not load');},
     closeVoucherDetail:()=>effects.push('close-detail')};
@@ -77,6 +77,7 @@ test('Edit record opens the same sales bill and original fiscal year with its it
   assert.equal(state.EditingVoucherId,'invoice-uuid-34');assert.equal(state.EditingVoucherNumber,'34');
   assert.equal(state.SaleLines[0].quantity,10);assert.equal(state.SaleLines[0].rate,100);
   const receipt=await editHarness({voucher_type:'receipt'});assert.equal(receipt.state.Active,'Payments');assert.equal(receipt.state.Modal,'payment');
+  const nb=await editHarness({number:'NB 34'});assert.equal(nb.state.EditingVoucherNumber,'NB 34');
 });
 
 test('cancelled invoices and a failed fiscal-year switch never open an incorrect editor',async()=>{

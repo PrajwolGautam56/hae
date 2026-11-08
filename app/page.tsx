@@ -16,7 +16,7 @@ import AccountingOperationsWorkspace from "./accounting-operations-workspace";
 import DocumentsWorkspace from "./documents-workspace";
 import { getCachedJson, invalidateClientCache } from "../lib/client-data-cache";
 import "./performance-status.css";
-import { continueSalesEntry, nextInvoicePreview } from "../lib/invoice-entry-flow";
+import { continueSalesEntry, nextInvoicePreview, saleNumberKey, salesNumberPreview } from "../lib/invoice-entry-flow";
 import { invoiceDraftNumber, invalidInvoiceLine, type InvoiceDraftNumber } from "../lib/invoice-line-entry";
 import "./invoice-entry.css";
 import { amountInWords } from "../lib/amount-in-words";
@@ -143,7 +143,7 @@ export default function Home() {
     received: 0,
     receivable: 0,
   });
-  const [nextNumbers, setNextNumbers] = useState({ sale: 1, receipt: 1, purchase: 1, expense: 1 });
+  const [nextNumbers, setNextNumbers] = useState({ sale: 1, sale_non_vat: 1, receipt: 1, purchase: 1, expense: 1 });
   const [amount, setAmount] = useState("");
   const [paymentMode, setPaymentMode] = useState("Cash");
   const [handledBy, setHandledBy] = useState("");
@@ -305,7 +305,7 @@ export default function Home() {
     setMembers(data.members || []);
     setMoneyAccounts(data.moneyAccounts || []);
     setCurrentMember(data.currentMember || null);
-    setNextNumbers(data.nextNumbers || { sale: 1, receipt: 1, purchase: 1, expense: 1 });
+    setNextNumbers({ sale: 1, sale_non_vat: 1, receipt: 1, purchase: 1, expense: 1, ...data.nextNumbers });
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
     setProducts(data.products || []);
@@ -504,7 +504,7 @@ export default function Home() {
       const savedNumber = data.savedRecord?.number || data.savedRecord?.sequence;
       setLastSavedSale(isCancelledSale ? null : savedNumber ? String(savedNumber) : "");
       const previewNumber = nextInvoicePreview(data.savedRecord?.sequence);
-      if (previewNumber) setNextNumbers(current => ({ ...current, sale: previewNumber }));
+      if (previewNumber) setNextNumbers(current => ({ ...current, [saleNumberKey(data.savedRecord?.series)]: previewNumber }));
       setFormParty("");
       setPartySearch("");
       setPartyPickerOpen(false);
@@ -702,7 +702,7 @@ export default function Home() {
       if (detailRequest.current !== request) return;
     }
     setActive(detail.voucher_type === "sale" ? "Sales" : "Payments");
-    setEditingVoucherId(detail.id);setEditingVoucherNumber(String(detail.sequence_no||detail.voucher_no||""));setFormParty(detail.parties?.name||"");setPartySearch(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
+    setEditingVoucherId(detail.id);setEditingVoucherNumber(String(detail.voucher_no||detail.sequence_no||""));setFormParty(detail.parties?.name||"");setPartySearch(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
     if(detail.voucher_type==="sale"){setCancelledSale(false);setCancellationReason("");setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setBillCategory(detail.bill_category==="pan"?"non_vat":detail.bill_category==="unclassified"?(Number(detail.tax_amount)>0?"vat":"non_vat"):(detail.bill_category||"vat"));setSupplierBillNo(detail.supplier_bill_no||"");setModal("sale");}
     else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
     closeVoucherDetail();
@@ -1089,15 +1089,15 @@ export default function Home() {
                 </article>
                 <article>
                   <small>BILL NUMBERS USED</small>
-                  <strong>{Math.max(0, Number(nextNumbers.sale) - 1)}</strong>
+                  <strong>{Math.max(0, Number(nextNumbers.sale) - 1) + Math.max(0, Number(nextNumbers.sale_non_vat) - 1)}</strong>
                 </article>
                 <article>
-                  <small>LAST INVOICE</small>
+                  <small>LAST VAT / LEGACY BILL</small>
                   <strong>{Number(nextNumbers.sale) > 1 ? Number(nextNumbers.sale) - 1 : "No bill yet"}</strong>
                 </article>
                 <article>
-                  <small>NEXT NUMBER</small>
-                  <strong>{nextInvoice}</strong>
+                  <small>NEXT VAT · NEXT NON-VAT</small>
+                  <strong>{nextInvoice} · NB {nextNumbers.sale_non_vat}</strong>
                 </article>
               </div>
               <article className="card sales-list">
@@ -1126,7 +1126,7 @@ export default function Home() {
                         salesTransactions.map((t) => (
                           <tr key={t.id} className="clickable-voucher" tabIndex={0} onClick={() => openVoucherDetail(t.id)} onKeyDown={(e) => e.key === "Enter" && openVoucherDetail(t.id)}>
                             <td>
-                              <strong>{t.sequence_no}</strong>
+                              <strong>{t.ref || t.sequence_no}</strong>
                             </td>
                             <td>
                               {calendar === "BS"
@@ -1154,7 +1154,7 @@ export default function Home() {
                 <div className="mobile-register-list">
                   {salesTransactions.map((transaction) => (
                     <button key={transaction.id} onClick={() => openVoucherDetail(transaction.id)}>
-                      <span><strong>Invoice #{transaction.sequence_no || transaction.ref}</strong><small>{transaction.document_status === "cancelled" ? "Cancelled bill" : transaction.party}</small></span>
+                      <span><strong>Invoice #{transaction.ref || transaction.sequence_no}</strong><small>{transaction.document_status === "cancelled" ? "Cancelled bill" : transaction.party}</small></span>
                       <span className="mobile-register-amount"><strong>{money(transaction.document_status === "cancelled" ? 0 : transaction.debit)}</strong><small>{calendar === "BS" ? bsDate(transaction.date) : adDate(transaction.date)}</small></span>
                       <span className="mobile-register-meta"><span>{transaction.ref}</span><span className={transaction.document_status === "cancelled" ? "cancelled-chip" : "paid-chip"}>{transaction.document_status === "cancelled" ? "Cancelled" : "Posted"}</span></span>
                     </button>
@@ -1410,7 +1410,7 @@ export default function Home() {
             <div className="modal-head">
               <div>
                 <small>{voucherDetail.voucher_type === "sale" ? "SALES INVOICE" : voucherDetail.voucher_type === "receipt" ? "PAYMENT RECEIPT" : "VOUCHER"} · FY {voucherDetail.fiscal_years?.label_bs || fiscalYear?.label_bs}</small>
-                <h2>{detailLoading ? "Loading details…" : `${voucherDetail.voucher_type === "sale" ? "Invoice" : voucherDetail.voucher_type === "receipt" ? "Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`}</h2>
+                <h2>{detailLoading ? "Loading details…" : `${voucherDetail.voucher_type === "sale" ? "Invoice" : voucherDetail.voucher_type === "receipt" ? "Receipt" : "Voucher"} #${voucherDetail.voucher_no || voucherDetail.sequence_no}`}</h2>
               </div>
               <button aria-label="Close voucher details" onClick={closeVoucherDetail}>×</button>
             </div>
@@ -1425,7 +1425,7 @@ export default function Home() {
                   <div><small>PARTY / CUSTOMER</small><strong>{voucherDetail.parties?.name || "Cash / General"}</strong><span>{[voucherDetail.parties?.place, voucherDetail.parties?.phone, voucherDetail.parties?.tax_no ? `PAN ${voucherDetail.parties.tax_no}` : ""].filter(Boolean).join(" · ") || "No additional details"}</span></div>
                   <div><small>DATE</small><strong>{calendar === "BS" ? bsDate(voucherDetail.voucher_date) : adDate(voucherDetail.voucher_date)}</strong><span>AD {adDate(voucherDetail.voucher_date)}</span></div>
                   {voucherDetail.due_date&&<div><small>DUE DATE</small><strong>{calendar === "BS" ? bsDate(voucherDetail.due_date) : adDate(voucherDetail.due_date)}</strong><span>AD {adDate(voucherDetail.due_date)}</span></div>}
-                  <div><small>{voucherDetail.voucher_type === "receipt" ? "RECEIPT NO." : "INVOICE NO."}</small><strong>{voucherDetail.sequence_no || voucherDetail.voucher_no}</strong><span>FY {voucherDetail.fiscal_years?.label_bs}</span></div>
+                  <div><small>{voucherDetail.voucher_type === "receipt" ? "RECEIPT NO." : "INVOICE NO."}</small><strong>{voucherDetail.voucher_no || voucherDetail.sequence_no}</strong><span>FY {voucherDetail.fiscal_years?.label_bs}</span></div>
                 </div>
                 <div className="voucher-audit"><span><small>GENERATED BY</small><strong>{voucherDetail.generator?.name || "Office"}</strong></span>{voucherDetail.handler?.name&&<span><small>COLLECTED / HANDLED BY</small><strong>{voucherDetail.handler.name}</strong></span>}{voucherDetail.money_account?.name&&<span><small>CASH / BANK ACCOUNT</small><strong>{voucherDetail.money_account.name}</strong></span>}</div>
                 {voucherDetail.lines?.length > 0 && <div className="voucher-lines"><table><thead><tr><th>#</th><th>PRODUCT / DESCRIPTION</th><th>QTY</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>{voucherDetail.lines.map((line:any,index:number)=><tr key={line.id}><td>{index+1}</td><td><strong>{line.description || line.products?.name}</strong><small>{[line.products?.sku,line.products?.unit].filter(Boolean).join(" · ")}</small></td><td>{Number(line.quantity).toLocaleString()}</td><td>{money(Number(line.rate))}</td><td><strong>{money(Number(line.amount))}</strong></td></tr>)}</tbody></table></div>}
@@ -1437,7 +1437,7 @@ export default function Home() {
                 {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
               </div>
             )}
-            <div className="modal-actions"><button onClick={closeVoucherDetail}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&voucherDetail.document_status!=="cancelled"&&<button className="edit-voucher" disabled={detailLoading} onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`)); }}>Print / PDF</button></div>
+            <div className="modal-actions"><button onClick={closeVoucherDetail}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&voucherDetail.document_status!=="cancelled"&&<button className="edit-voucher" disabled={detailLoading} onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.voucher_no || voucherDetail.sequence_no}`)); }}>Print / PDF</button></div>
           </section>
         </div>
       )}
@@ -1560,7 +1560,7 @@ export default function Home() {
               </label>
               <label>
                 {modal === "sale"
-                  ? "Invoice number"
+                  ? billCategory === "non_vat" ? "Non-VAT invoice number" : "Invoice number"
                   : modal === "payment"
                     ? "Receipt number"
                     : modal === "purchase"
@@ -1570,7 +1570,7 @@ export default function Home() {
                   readOnly
                   value={String(
                     modal === "sale"
-                      ? editingVoucherId ? editingVoucherNumber : nextNumbers.sale
+                      ? editingVoucherId ? editingVoucherNumber : salesNumberPreview(nextNumbers, billCategory)
                       : modal === "payment"
                         ? nextNumbers.receipt
                         : modal === "purchase"
@@ -1578,7 +1578,7 @@ export default function Home() {
                           : nextNumbers.expense,
                   )}
                 />
-                {modal === "sale" && !editingVoucherId && <small>{snapshotSync === "loading" ? "Checking latest number…" : "Automatic number · final number assigned when saved"}</small>}
+                {modal === "sale" && !editingVoucherId && <small>{snapshotSync === "loading" ? "Checking latest number…" : billCategory === "non_vat" ? "Independent NB series · starts at NB 1 each FY; does not use a VAT number" : "VAT / standard series · final number assigned when saved"}</small>}
               </label>
               <label>
                 Generated by
@@ -1588,7 +1588,7 @@ export default function Home() {
                 <div className="invoice-section-title full"><span>02</span><div><strong>Items & pricing</strong><small>Add products, quantity and rate. Scroll normally for totals.</small></div></div>
               )}
               {(modal === "purchase" || (modal === "sale" && !cancelledSale)) && <label>Due date / payment term (BS)<BsDateInput value={dueDate} onChange={setDueDate}/></label>}
-              {(modal === "purchase" || (modal === "sale" && !cancelledSale)) && <label>Bill type<select value={billCategory} onChange={event => { setBillCategory(event.target.value); setTaxPercent(event.target.value === "vat" ? 13 : 0); }}><option value="vat">VAT bill</option>{modal === "purchase" && <option value="pan">PAN bill (no VAT)</option>}<option value="non_vat">{modal === "sale" ? "Non-VAT bill" : "No VAT / no PAN bill"}</option></select></label>}
+              {(modal === "purchase" || modal === "sale") && <label>Bill type / number series<select value={billCategory} disabled={modal === "sale" && Boolean(editingVoucherId)} onChange={event => { setBillCategory(event.target.value); setTaxPercent(event.target.value === "vat" ? 13 : 0); }}><option value="vat">{modal === "sale" ? "VAT bill · 1, 2, 3…" : "VAT bill"}</option>{modal === "purchase" && <option value="pan">PAN bill (no VAT)</option>}<option value="non_vat">{modal === "sale" ? "Non-VAT bill · NB 1, NB 2…" : "No VAT / no PAN bill"}</option></select>{modal === "sale" && editingVoucherId && <small>Issued bill type and number are preserved. Cancel and create a new bill to use another series.</small>}</label>}
               {modal === "purchase" && <label>Supplier's bill number<input value={supplierBillNo} onChange={event=>setSupplierBillNo(event.target.value)} placeholder="Number printed on supplier bill"/></label>}
               {modal === "sale" && cancelledSale ? <div className="cancelled-sale-explanation full"><strong>This invoice number will be cancelled.</strong><p>No customer charge, VAT, stock movement or ledger balance will be posted. The number remains visible in the sales register.</p><label>Reason / note (optional)<input value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} placeholder="e.g. Bill prepared by mistake" /></label></div> : modal === "sale" || modal === "purchase" ? (
                 <div className="invoice-builder full">

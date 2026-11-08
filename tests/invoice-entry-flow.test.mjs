@@ -6,7 +6,7 @@ import ts from 'typescript';
 const source = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 const transpile = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const compile = code => import(`data:text/javascript;base64,${Buffer.from(transpile(code)).toString('base64')}`);
-const { continueSalesEntry, nextInvoicePreview } = await compile(await source('lib/invoice-entry-flow.ts'));
+const { continueSalesEntry, nextInvoicePreview, saleNumberKey, salesNumberPreview } = await compile(await source('lib/invoice-entry-flow.ts'));
 const { accountingMutationResponse } = await compile(await source('lib/mutation-response.ts'));
 
 test('only a new sale continues into another invoice', () => {
@@ -38,13 +38,13 @@ const page = await source('app/page.tsx');
 const responseHandler = page.slice(page.indexOf('    const data = await response.json();', page.indexOf('const response = await fetch("/api/accounting",')),
   page.indexOf('\n  function openSale()'));
 const handlerBody = responseHandler.slice(0, responseHandler.lastIndexOf('\n  }'));
-async function runSaveResponse({ type = 'sale', editing = '', ok = true, cancelled = false } = {}) {
+async function runSaveResponse({ type = 'sale', editing = '', ok = true, cancelled = false, series = 'standard' } = {}) {
   const state = { modal: type, formParty: 'Old party', saleLines: [{ name: 'Old item' }], discountPercent: 10, nextNumbers: { sale: 3, receipt: 7 } };
   const effects = [];
   const context = {
     modal: type, editingVoucherId: editing, kind: 'Invoice', isCancelledSale: cancelled,
-    response: { ok, json: async () => ok ? { saved: true, refreshRequired: true, fiscalYearId: 'fy', savedRecord: { sequence: 3, number: '3' } } : { error: 'Stock unavailable' } },
-    continueSalesEntry, nextInvoicePreview,
+    response: { ok, json: async () => ok ? { saved: true, refreshRequired: true, fiscalYearId: 'fy', savedRecord: { sequence: 3, number: series === 'non_vat' ? 'NB 3' : '3', series } } : { error: 'Stock unavailable' } },
+    continueSalesEntry, nextInvoicePreview, saleNumberKey,
     emptySaleLine: () => ({ name: '', quantity: 1, rate: 0 }),
     clearReportCache() {}, invalidateClientCache() {},
     draftKey: null, clearInvoiceDraft() {},
@@ -87,6 +87,17 @@ test('reserving a cancelled number resets to a normal next bill and preserves th
   assert.equal(state.nextNumbers.sale,4);
   assert.equal(state.lastSavedSale,null);
   assert.match(state.notice,/Bill #3 cancelled/);
+});
+
+test('non-VAT batch entry advances only the NB preview, including cancelled NB bills', async () => {
+  for(const cancelled of [false,true]) {
+    const {state}=await runSaveResponse({series:'non_vat',cancelled});
+    assert.equal(state.nextNumbers.sale,3);
+    assert.equal(state.nextNumbers.sale_non_vat,4);
+    assert.equal(salesNumberPreview(state.nextNumbers,'non_vat'),'NB 4');
+    assert.equal(salesNumberPreview(state.nextNumbers,'vat'),'3');
+    if(!cancelled)assert.equal(state.lastSavedSale,'NB 3');
+  }
 });
 
 test('editing a sale and saving other voucher types still closes the editor', async () => {
