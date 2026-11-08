@@ -240,3 +240,30 @@ test("financial years carry assets and liabilities but close old income to retai
   );
   assert.equal(pl.totals.netProfit, 50);
 });
+
+test("imported party openings reconcile with the trial balance without treating them as new sales", async () => {
+  const accounts=[
+    {id:'ar',system_key:'accounts_receivable',account_type:'asset',normal_side:'debit'},
+    {id:'ap',system_key:'accounts_payable',account_type:'liability',normal_side:'credit'},
+    {id:'eq',system_key:'opening_equity',account_type:'equity',normal_side:'credit'},
+    {id:'sales',system_key:'sales_revenue',account_type:'income',normal_side:'credit'},
+  ].map(a=>({...a,company_id:'c',code:a.id,name:a.id}));
+  const fy={id:'now',company_id:'c',start_ad:'2026-07-17'};
+  const makeDb=amount=>database({accounts,
+    parties:[{id:'p',company_id:'c',opening_balance:100}],
+    fiscal_years:[{id:'old',company_id:'c',start_ad:'2025-07-17'},fy],money_accounts:[],
+    party_opening_balances:[{party_id:'p',fiscal_year_id:'now',amount,balance_source:'manual'}],
+    journal_lines:[
+      {id:'1',company_id:'c',account_id:'ar',party_id:'p',effective_date:'2026-01-01',debit:50,credit:0,journal_entries:{}},
+      {id:'2',company_id:'c',account_id:'sales',effective_date:'2026-01-01',debit:0,credit:50,journal_entries:{}},
+    ]});
+  const debit=await financialReport(makeDb(500),{id:'c'},fy,'trial_balance',fy.start_ad,'2026-08-01',null);
+  assert.equal(debit.rows.find(r=>r.id==='ar').openingDebit,500);
+  assert.equal(debit.balanced,true);
+  const credit=await financialReport(makeDb(-250),{id:'c'},fy,'trial_balance',fy.start_ad,'2026-08-01',null);
+  assert.equal(credit.rows.some(r=>r.id==='ar'),false);
+  assert.equal(credit.rows.find(r=>r.id==='ap').openingCredit,250);
+  assert.equal(credit.balanced,true);
+  const pl=await financialReport(makeDb(500),{id:'c'},fy,'profit_loss',fy.start_ad,'2026-08-01',null);
+  assert.equal(pl.totals.netProfit,0);
+});

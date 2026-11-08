@@ -1,0 +1,19 @@
+.opening-edit-button { justify-self:start; margin-top:4px; min-height:36px; padding:7px 11px; border:1px solid #bed0ef; border-radius:8px; background:#eff5ff; color:#175cd3; font-size:12px; font-weight:700; cursor:pointer; }
+.opening-editor { min-width:0; padding:20px; border:1px solid #c5d5ef; border-radius:16px; background:#fff; box-shadow:0 6px 24px #172b4d08; }
+.opening-editor-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.opening-editor h3 { margin:0; font-size:17px; color:#182230; }
+.opening-editor-heading p { margin:6px 0 0; color:#667085; font-size:12px; }
+.opening-editor-heading button { flex:none; padding:2px 8px; border:0; background:transparent; font-size:24px; color:#667085; cursor:pointer; }
+.opening-editor form,.opening-editor label { display:grid; gap:8px; }
+.opening-editor form { gap:15px; margin-top:15px; }
+.opening-editor label { min-width:0; color:#475467; font-size:12px; font-weight:700; }
+.opening-editor input,.opening-editor select { width:100%; min-width:0; min-height:44px; padding:10px 12px; border:1px solid #d0d5dd; border-radius:9px; background:#fff; color:#182230; font:inherit; }
+.opening-editor-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.opening-editor-help { margin:0; font-size:12px; line-height:1.6; color:#667085; }
+.opening-editor-error { padding:12px; background:#fff3f2; border-radius:8px; color:#b42318; font-size:13px; }
+.opening-editor-preview { margin:0; padding:14px; border-radius:8px; background:#f4f7fc; color:#344054; font-size:14px; }
+.opening-editor-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; }
+.opening-editor-actions button { min-height:42px; padding:10px 16px; border:1px solid #d0d5dd; border-radius:9px; cursor:pointer; }
+.opening-editor-actions .primary { border-color:transparent; color:#fff; }
+@media(max-width:600px) { .opening-editor{padding:16px}.opening-editor-grid{grid-template-columns:1fr}.opening-editor-actions button{flex:1} }
+@media print { .opening-editor,.opening-edit-button { display:none!important; } }

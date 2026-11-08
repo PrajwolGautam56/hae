@@ -1162,6 +1162,12 @@ export default function Home() {
               fiscalYear={fiscalYear}
               initialPartyId={reportPartyId}
               onNotice={setNotice}
+              canManageOpenings={["admin","manager","accountant"].includes(currentMember?.role || "")}
+              onBalancesChanged={() => {
+                clearReportCache();
+                try { for (let i=sessionStorage.length-1;i>=0;i--) { const key=sessionStorage.key(i); if(key?.startsWith("hae-snapshot-"))sessionStorage.removeItem(key); } } catch {}
+                void changeFiscalYear(fiscalYear.id).catch(()=>setNotice("Opening balance saved, but dashboard balances could not refresh. Reload the page; do not enter the opening again."));
+              }}
             />
           ) : (
             <section className="module-page">
@@ -1848,13 +1854,14 @@ export default function Home() {
                       min="0"
                       step="0.01"
                       value={openingBalance}
+                      disabled={!["admin","manager","accountant"].includes(currentMember?.role || "")}
                       onChange={(e) => setOpeningBalance(e.target.value)}
                       placeholder="0.00"
                     />
                   </label>
                   <label>
                     Balance side
-                    <select value={openingSide} onChange={(e) => setOpeningSide(e.target.value as "debit" | "credit")}>
+                    <select value={openingSide} disabled={!["admin","manager","accountant"].includes(currentMember?.role || "")} onChange={(e) => setOpeningSide(e.target.value as "debit" | "credit")}>
                       <option value="debit">Debit · Party owes us</option>
                       <option value="credit">Credit · We owe party</option>
                     </select>

@@ -260,30 +260,14 @@ export async function POST(request: Request) {
       const openingBalance = Number(body.openingBalance || 0);
       if (!Number.isFinite(openingBalance))
         return NextResponse.json({ error: "Opening balance must be a valid number" }, { status: 400 });
-      const { data: party, error } = await supabase.from("parties").upsert(
-        {
-          company_id: initialState.company.id,
-          name,
-          place: String(body.place || ""),
-          phone: String(body.phone || ""),
-          tax_no: String(body.taxNo || "") || null,
-          party_type: String(body.partyType || "both"),
-          opening_balance: openingBalance,
-        },
-        { onConflict: "company_id,name" },
-      ).select("id").single();
-      if (error) throw error;
-      const { error: openingError } = await supabase
-        .from("party_opening_balances")
-        .upsert(
-          { fiscal_year_id: initialState.fiscalYear.id, party_id: party.id, amount: openingBalance },
-          { onConflict: "fiscal_year_id,party_id" },
-        );
-      if (openingError) throw openingError;
-      await supabase.rpc("refresh_future_opening_balances", {
-        p_company_id: initialState.company.id,
-        p_from_fiscal_year_id: initialState.fiscalYear.id,
+      const { error } = await supabase.rpc("create_party_with_opening", {
+        p_company_id: initialState.company.id,p_fiscal_year_id: initialState.fiscalYear.id,
+        p_member_id: currentMember.id,p_name:name,p_place:String(body.place || ""),
+        p_phone:String(body.phone || ""),p_tax_no:String(body.taxNo || ""),
+        p_party_type:String(body.partyType || "both"),p_amount:openingBalance,
       });
+      if (error?.code === "23505") return NextResponse.json({error:"This party already exists. Open its ledger to edit the opening balance."},{status:409});
+      if (error) throw error;
       return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), initialState.fiscalYear.id, () => snapshot(initialState.fiscalYear.id, initialState, currentMember)), {
         status: 201,
       });

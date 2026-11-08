@@ -63,7 +63,7 @@ export async function connectedReport(
       db
         .from("party_opening_balances")
         .select(
-          "party_id,amount,fiscal_year_id,fiscal_years!inner(company_id,start_ad)",
+          "party_id,amount,fiscal_year_id,balance_source,note,fiscal_years!inner(company_id,start_ad)",
         )
         .eq("fiscal_years.company_id", company.id)
         .order("party_id")
@@ -281,6 +281,9 @@ export async function connectedReport(
     return {
       ...envelope,
       party: selected,
+      fiscalYearOpening: openingFor(selected),
+      openingSource: openings.find(o => o.party_id === partyId && o.fiscal_year_id === fy.id)?.balance_source || "legacy",
+      openingNote: openings.find(o => o.party_id === partyId && o.fiscal_year_id === fy.id)?.note || "",
       opening: balances[0].opening,
       closing: rupees(running),
       rows,

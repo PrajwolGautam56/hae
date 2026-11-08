@@ -1,5 +1,6 @@
 import { allReportRows } from "./report-query";
 import { cents, rupees } from "./accounting-report-model";
+import { openingFinancialAdjustments } from "./party-opening";
 
 export async function financialReport(
   db: any,
@@ -34,7 +35,7 @@ export async function financialReport(
         db
           .from("party_opening_balances")
           .select(
-            "party_id,amount,fiscal_year_id,fiscal_years!inner(company_id,start_ad)",
+            "party_id,amount,fiscal_year_id,balance_source,fiscal_years!inner(company_id,start_ad)",
           )
           .eq("fiscal_years.company_id", company.id)
           .order("party_id")
@@ -78,6 +79,11 @@ export async function financialReport(
     );
     add(value >= 0 ? "accounts_receivable" : "accounts_payable", value);
     add("opening_equity", -value);
+  }
+  for (const adjustment of openingFinancialAdjustments(parties,partyOpenings,years,lines,accounts,fy.start_ad)) {
+    add("accounts_receivable",adjustment.receivable);
+    add("accounts_payable",adjustment.payable);
+    add("opening_equity",adjustment.equity);
   }
   const cashOpening = moneyAccounts.reduce(
     (s, a) => s + cents(a.opening_balance),
@@ -149,7 +155,7 @@ export async function financialReport(
     reportType: type,
     accounts,
     basis:
-      "Posted journals with prior balance-sheet accounts carried forward and prior income/expense closed to retained earnings. Opening cash uses the recorded account opening balance.",
+      "Posted journals with prior balance-sheet accounts carried forward and prior income/expense closed to retained earnings. Manual party openings replace the selected FY baseline with the difference offset to opening equity, not sales. Opening cash uses the recorded account opening balance.",
   };
   if (type === "trial_balance") {
     const keys = [

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import BsDateInput from "./bs-date-input";
+import PartyOpeningEditor from "./party-opening-editor";
 import { formatBs, adToBsParts, bsToAd, bsMonths } from "../lib/nepali-date";
 import { downloadCsv, printDocument } from "../lib/export-data";
 import {
@@ -65,11 +66,15 @@ export default function ReportsWorkspace({
   fiscalYear,
   initialPartyId,
   onNotice,
+  canManageOpenings = false,
+  onBalancesChanged,
 }: {
   parties: any[];
   fiscalYear: any;
   initialPartyId: string;
   onNotice: (x: string) => void;
+  canManageOpenings?: boolean;
+  onBalancesChanged?: () => void;
 }) {
   const now =
     businessDate() < fiscalYear.start_ad
@@ -92,6 +97,7 @@ export default function ReportsWorkspace({
   );
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [openingEditor, setOpeningEditor] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
   async function classifyBill(voucherId: string, billCategory: string) {
     try {
@@ -126,6 +132,7 @@ export default function ReportsWorkspace({
     setMonthOffset(0);
     return () => requestRef.current?.abort();
   }, [initialPartyId, fiscalYear?.id]);
+  useEffect(() => { setOpeningEditor(false); },[partyId,type,fiscalYear?.id]);
   useEffect(() => {
     if (!fiscalYear?.id) return;
     const timer = setTimeout(run, 80);
@@ -208,7 +215,7 @@ export default function ReportsWorkspace({
     }
   }
   function exportReport() {
-    if (!data?.rows?.length) {
+    if (!data?.rows?.length && !(data?.party && type === "daybook")) {
       onNotice("There is no report data to download");
       return;
     }
@@ -319,8 +326,13 @@ export default function ReportsWorkspace({
         { label: "Tax", value: (r: any) => r.tax },
         { label: "Gross", value: (r: any) => r.total },
       ]);
-    else
-      downloadCsv(name, data.rows, [
+    else {
+      const rows = type === "daybook" && data.party ? [
+        {date:from,ref:"",type:"Opening balance",party:data.party.name,particulars:from !== fiscalYear.start_ad ? "Balance before selected period, including FY opening" : data.openingSource === "manual" ? `Manual opening · ${data.openingNote || "Previous software / records"}` : "Balance brought forward",debit:Math.max(Number(data.opening),0),credit:Math.max(-Number(data.opening),0),balance:data.opening},
+        ...data.rows,
+        {date:to,ref:"",type:"Closing balance",party:data.party.name,particulars:"",debit:0,credit:0,balance:data.closing},
+      ] : data.rows;
+      downloadCsv(name, rows, [
         { label: "Date (BS)", value: (r: any) => formatBs(r.date) },
         { label: "Reference", value: (r: any) => r.ref },
         { label: "Type", value: (r: any) => typeLabel[r.type] || r.type },
@@ -330,6 +342,7 @@ export default function ReportsWorkspace({
         { label: "Credit", value: (r: any) => r.credit },
         { label: "Balance", value: (r: any) => r.balance ?? "" },
       ]);
+    }
   }
   const balance = Number(data?.closing || 0);
   return (
@@ -513,9 +526,13 @@ export default function ReportsWorkspace({
       {partyId && data && type === "daybook" && (
         <div className="ledger-summary">
           <article>
-            <small>OPENING BALANCE</small>
+            <small>{from === fiscalYear.start_ad ? "OPENING BALANCE" : "PERIOD OPENING BALANCE"}</small>
             <strong>{money(data.opening)}</strong>
             <span>{data.opening >= 0 ? "Debit" : "Credit"}</span>
+            <span>{data.openingSource === "manual" ? "Manual · previous software / records" : data.openingSource === "carry_forward" ? "Brought forward from previous FY" : "Recorded FY opening"}</span>
+            {from !== fiscalYear.start_ad && <span>FY opening: {money(data.fiscalYearOpening)} {Number(data.fiscalYearOpening)<0?"Cr":"Dr"}</span>}
+            {data.openingNote && <span>{data.openingNote}</span>}
+            {canManageOpenings && <button className="opening-edit-button" onClick={()=>setOpeningEditor(value=>!value)}>{Number(data.fiscalYearOpening)===0 && data.openingSource!=="manual"?"＋ Add Opening Balance":"✎ Edit Opening Balance"}</button>}
           </article>
           <article>
             <small>PERIOD DEBIT</small>
@@ -536,6 +553,7 @@ export default function ReportsWorkspace({
           </article>
         </div>
       )}
+      {openingEditor && partyId && type === "daybook" && <PartyOpeningEditor key={`${partyId}:${fiscalYear.id}`} partyId={partyId} fiscalYearId={fiscalYear.id} onClose={()=>setOpeningEditor(false)} onSaved={()=>{invalidateClientCache();setOpeningEditor(false);onNotice("Opening balance saved. Ledger and future-year balances updated.");onBalancesChanged?.();void run();}}/>}
       {data &&
         [
           "sales",
