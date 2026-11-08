@@ -207,6 +207,7 @@ export default function Home() {
   const [transactionDate, setTransactionDate] = useState(today);
   const [dueDate, setDueDate] = useState("");
   const [voucherDetail, setVoucherDetail] = useState<any>(null);
+  const detailRequest = useRef<AbortController | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [editingVoucherId, setEditingVoucherId] = useState("");
   const [editingVoucherNumber, setEditingVoucherNumber] = useState("");
@@ -667,26 +668,44 @@ export default function Home() {
   }
   async function signOut() { await fetch("/api/auth/logout", { method: "POST" }); window.location.assign("/login"); }
   async function openVoucherDetail(id: string) {
+    detailRequest.current?.abort();
+    const controller = new AbortController();
+    detailRequest.current = controller;
     setDetailLoading(true);
     setVoucherDetail({ id });
     try {
-      const response = await fetch(`/api/accounting?voucherId=${encodeURIComponent(id)}`, { cache: "no-store" });
+      const response = await fetch(`/api/accounting?voucherId=${encodeURIComponent(id)}`, { cache: "no-store", signal: controller.signal });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not load voucher details");
-      setVoucherDetail(data);
+      if (detailRequest.current === controller && !controller.signal.aborted) setVoucherDetail(data);
     } catch (error) {
-      setVoucherDetail(null);
-      setNotice(error instanceof Error ? error.message : "Could not load voucher details");
+      if (detailRequest.current === controller && !controller.signal.aborted) {
+        setVoucherDetail(null);
+        setNotice(error instanceof Error ? error.message : "Could not load voucher details");
+      }
     } finally {
-      setDetailLoading(false);
+      if (detailRequest.current === controller) setDetailLoading(false);
     }
   }
-  function editVoucher() {
+  function closeVoucherDetail() {
+    detailRequest.current?.abort();detailRequest.current=null;
+    setVoucherDetail(null);setDetailLoading(false);
+  }
+  useEffect(() => () => detailRequest.current?.abort(), []);
+  async function editVoucher() {
     const detail=voucherDetail;if(!detail||!["sale","receipt"].includes(detail.voucher_type)||detail.document_status==="cancelled")return;
+    if (detail.fiscal_year_id && detail.fiscal_year_id !== fiscalYear?.id) {
+      const request=detailRequest.current;
+      setDetailLoading(true);
+      try { await changeFiscalYear(detail.fiscal_year_id); }
+      catch(error) { if(detailRequest.current===request){setDetailLoading(false);setNotice(error instanceof Error?error.message:"Could not load the invoice financial year");} return; }
+      if (detailRequest.current !== request) return;
+    }
+    setActive(detail.voucher_type === "sale" ? "Sales" : "Payments");
     setEditingVoucherId(detail.id);setEditingVoucherNumber(String(detail.sequence_no||detail.voucher_no||""));setFormParty(detail.parties?.name||"");setPartySearch(detail.parties?.name||"");setTransactionDate(detail.voucher_date);setDueDate(detail.due_date||"");setParticulars(detail.narration||"");
     if(detail.voucher_type==="sale"){setCancelledSale(false);setCancellationReason("");setSaleLines((detail.lines||[]).map((line:any)=>({productId:line.product_id||"",name:line.description||line.products?.name||"",quantity:Number(line.quantity),rate:Number(line.rate),unit:line.products?.unit||"pcs",itemType:"finished_good"})));setDiscountPercent(Number(detail.discount_percent||0));setTaxPercent(Number(detail.tax_percent||0));setBillCategory(detail.bill_category==="pan"?"non_vat":detail.bill_category==="unclassified"?(Number(detail.tax_amount)>0?"vat":"non_vat"):(detail.bill_category||"vat"));setSupplierBillNo(detail.supplier_bill_no||"");setModal("sale");}
     else{setAmount(String(detail.total||""));setPaymentMode(detail.payment_mode||"Cash");setHandledBy(detail.handled_by||currentMember?.id||"");setMoneyAccountId(detail.money_account_id||"");setChequeNo(detail.cheque_no||"");setChequeBank(detail.cheque_bank||"");setChequeExchangeDate(detail.cheque_exchange_date||"");setModal("payment");}
-    setVoucherDetail(null);
+    closeVoucherDetail();
   }
   const saleSubtotal = saleLines.reduce(
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0),
@@ -1162,6 +1181,7 @@ export default function Home() {
               fiscalYear={fiscalYear}
               initialPartyId={reportPartyId}
               onNotice={setNotice}
+              onOpenVoucher={openVoucherDetail}
               canManageOpenings={["admin","manager","accountant"].includes(currentMember?.role || "")}
               onBalancesChanged={() => {
                 clearReportCache();
@@ -1385,14 +1405,14 @@ export default function Home() {
       </section>
 
       {voucherDetail && (
-        <div className="modal-backdrop" onMouseDown={() => setVoucherDetail(null)}>
+        <div className="modal-backdrop" onMouseDown={closeVoucherDetail}>
           <section className="modal voucher-detail-modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <div>
                 <small>{voucherDetail.voucher_type === "sale" ? "SALES INVOICE" : voucherDetail.voucher_type === "receipt" ? "PAYMENT RECEIPT" : "VOUCHER"} · FY {voucherDetail.fiscal_years?.label_bs || fiscalYear?.label_bs}</small>
                 <h2>{detailLoading ? "Loading details…" : `${voucherDetail.voucher_type === "sale" ? "Invoice" : voucherDetail.voucher_type === "receipt" ? "Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`}</h2>
               </div>
-              <button aria-label="Close voucher details" onClick={() => setVoucherDetail(null)}>×</button>
+              <button aria-label="Close voucher details" onClick={closeVoucherDetail}>×</button>
             </div>
             {!detailLoading && (
               <div className="voucher-document" ref={voucherDocument}>
@@ -1417,7 +1437,7 @@ export default function Home() {
                 {voucherDetail.narration && <div className="voucher-note"><small>NARRATION</small><p>{voucherDetail.narration}</p></div>}
               </div>
             )}
-            <div className="modal-actions"><button onClick={() => setVoucherDetail(null)}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&voucherDetail.document_status!=="cancelled"&&<button className="edit-voucher" onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`)); }}>Print / PDF</button></div>
+            <div className="modal-actions"><button onClick={closeVoucherDetail}>Close</button>{["sale","receipt"].includes(voucherDetail.voucher_type)&&voucherDetail.document_status!=="cancelled"&&<button className="edit-voucher" disabled={detailLoading} onClick={editVoucher}>✎ Edit record</button>}<button className="primary" disabled={detailLoading} onClick={() => { if (voucherDocument.current) setVoucherPrint(voucherPrintHtml(voucherDocument.current.innerHTML, `${voucherDetail.voucher_type === "sale" ? "Sales Invoice" : voucherDetail.voucher_type === "receipt" ? "Payment Receipt" : "Voucher"} #${voucherDetail.sequence_no || voucherDetail.voucher_no}`)); }}>Print / PDF</button></div>
           </section>
         </div>
       )}

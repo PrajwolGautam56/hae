@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import PartyOpeningEditor from "./party-opening-editor";
+import ReportVoucherReference from "./report-voucher-reference";
 import { formatBs, adToBsParts, bsToAd, bsMonths } from "../lib/nepali-date";
 import { downloadCsv, printDocument } from "../lib/export-data";
 import {
@@ -68,6 +69,7 @@ export default function ReportsWorkspace({
   onNotice,
   canManageOpenings = false,
   onBalancesChanged,
+  onOpenVoucher,
 }: {
   parties: any[];
   fiscalYear: any;
@@ -75,6 +77,7 @@ export default function ReportsWorkspace({
   onNotice: (x: string) => void;
   canManageOpenings?: boolean;
   onBalancesChanged?: () => void;
+  onOpenVoucher?: (id: string) => void;
 }) {
   const now =
     businessDate() < fiscalYear.start_ad
@@ -613,6 +616,7 @@ export default function ReportsWorkspace({
           data={data}
           loading={loading}
           onClassify={classifyBill}
+          onOpenVoucher={onOpenVoucher}
         />
       ) : type === "party_summary" ? (
         <PartySummaryTable data={data} loading={loading} />
@@ -625,6 +629,7 @@ export default function ReportsWorkspace({
           from={from}
           to={to}
           accountId={accountId}
+          onOpenVoucher={onOpenVoucher}
         />
       ) : type.startsWith("aging_") ? (
         <AgingTable
@@ -635,7 +640,7 @@ export default function ReportsWorkspace({
       ) : type === "stock_statement" ? (
         <StockStatementTable data={data} loading={loading} />
       ) : type === "stock_movement" ? (
-        <StockMovementTable data={data} loading={loading} />
+        <StockMovementTable data={data} loading={loading} onOpenVoucher={onOpenVoucher} />
       ) : ["balance_sheet", "profit_loss", "group_summary"].includes(type) ? (
         <FinancialStatementTable data={data} loading={loading} type={type} />
       ) : type === "tax_summary" ? (
@@ -648,6 +653,7 @@ export default function ReportsWorkspace({
           to={to}
           partyId={type === "daybook" ? partyId : ""}
           type={type}
+          onOpenVoucher={onOpenVoucher}
         />
       )}
     </section>
@@ -745,12 +751,14 @@ function GeneralLedgerTable({
   from,
   to,
   accountId,
+  onOpenVoucher,
 }: {
   data: any;
   loading: boolean;
   from: string;
   to: string;
   accountId: string;
+  onOpenVoucher?: (id: string) => void;
 }) {
   return (
     <article className="card report-table">
@@ -782,7 +790,7 @@ function GeneralLedgerTable({
                 <tr key={r.id}>
                   <td>{formatBs(r.date)}</td>
                   <td>
-                    <strong>{r.ref}</strong>
+                    <ReportVoucherReference voucherId={r.voucherId} reference={r.ref} label="journal source" onOpen={onOpenVoucher}/>
                   </td>
                   <td>
                     {r.accountCode} · {r.accountName}
@@ -834,6 +842,7 @@ function VoucherReportTable({
   to,
   partyId,
   type,
+  onOpenVoucher,
 }: {
   data: any;
   loading: boolean;
@@ -841,6 +850,7 @@ function VoucherReportTable({
   to: string;
   partyId: string;
   type: string;
+  onOpenVoucher?: (id: string) => void;
 }) {
   return (
     <article className="card report-table">
@@ -877,7 +887,7 @@ function VoucherReportTable({
                 <tr key={r.id}>
                   <td>{formatBs(r.date)}</td>
                   <td>
-                    <strong>{r.ref}</strong>
+                    <ReportVoucherReference voucherId={r.voucherId} reference={r.ref} label={typeLabel[r.type] || r.type} onOpen={onOpenVoucher}/>
                   </td>
                   <td>{typeLabel[r.type] || r.type}</td>
                   {!partyId && <td>{r.party}</td>}
@@ -1208,9 +1218,11 @@ function StockStatementTable({
 function StockMovementTable({
   data,
   loading,
+  onOpenVoucher,
 }: {
   data: any;
   loading: boolean;
+  onOpenVoucher?: (id: string) => void;
 }) {
   return (
     <article className="card report-table">
@@ -1239,7 +1251,7 @@ function StockMovementTable({
                 <tr key={row.id}>
                   <td>{formatBs(row.movement_date)}</td>
                   <td>
-                    <strong>{row.reference}</strong>
+                    <ReportVoucherReference voucherId={row.voucher_id} reference={row.reference} label={typeLabel[row.voucherType] || row.voucherType} onOpen={onOpenVoucher}/>
                   </td>
                   <td>{row.product?.name || "—"}</td>
                   <td>{typeLabel[row.voucherType] || row.voucherType}</td>
@@ -1330,10 +1342,12 @@ function MonthlyAccountingTable({
   data,
   loading,
   onClassify,
+  onOpenVoucher,
 }: {
   data: any;
   loading: boolean;
   onClassify: (id: string, category: string) => Promise<void>;
+  onOpenVoucher?: (id: string) => void;
 }) {
   return (
     <article className="card report-table">
@@ -1433,7 +1447,7 @@ function MonthlyAccountingTable({
                 <tr key={b.id}>
                   <td>{formatBs(b.voucher_date)}</td>
                   <td>
-                    {b.voucher_type} #{b.supplier_bill_no || b.voucher_no}
+                    <ReportVoucherReference voucherId={b.id} reference={b.supplier_bill_no || b.voucher_no} label={typeLabel[b.voucher_type] || b.voucher_type} onOpen={onOpenVoucher}/>
                   </td>
                   <td>
                     {b.parties?.name}

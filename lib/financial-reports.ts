@@ -25,7 +25,7 @@ export async function financialReport(
         db
           .from("journal_lines")
           .select(
-            "id,effective_date,account_id,party_id,description,debit,credit,journal_entries!journal_line_company_entry_fkey!inner(id,entry_date,reference,description,fiscal_year_id,created_at)",
+            "id,effective_date,account_id,party_id,description,debit,credit,journal_entries!journal_line_company_entry_fkey!inner(id,voucher_id,entry_date,reference,description,fiscal_year_id,created_at)",
           )
           .eq("company_id", company.id)
           .lte("effective_date", to)
@@ -199,6 +199,7 @@ export async function financialReport(
         const a: any = byId.get(l.account_id);
         return {
           id: l.id,
+          voucherId: l.journal_entries.voucher_id,
           date: l.effective_date,
           ref: l.journal_entries.reference,
           accountId: l.account_id,

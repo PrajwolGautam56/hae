@@ -1,0 +1,6 @@
+.report-voucher-link { display:inline-flex; align-items:center; justify-content:flex-start; gap:7px; min-height:40px; padding:5px 9px; border:1px solid #d7e4fa; border-radius:8px; background:#f1f6ff; color:#175cd3; font:inherit; cursor:pointer; }
+.report-voucher-link:hover { background:#e3edff; border-color:#a5bff0; }
+.report-voucher-link:focus-visible { outline:3px solid #8db4ff; outline-offset:2px; }
+.report-voucher-link span { font-size:14px; color:inherit; }
+@media(max-width:650px) { .report-voucher-link { min-height:44px; } }
+@media print { .report-voucher-link { min-height:0; padding:0; border:0; background:none; color:inherit; }.report-voucher-link span { display:none; } }

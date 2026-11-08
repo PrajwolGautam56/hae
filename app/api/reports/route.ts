@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     if (reportType === "stock_statement" || reportType === "stock_movement") {
       const [productsResult, periodResult, futureResult] = await Promise.all([
         allReportRows(db.from("products").select("id,sku,name,unit,item_type,stock_qty,purchase_price,sale_price").eq("company_id", company.id).order("name").order("id")).then(data=>({data,error:null})),
-        allReportRows(db.from("stock_movements").select("id,product_id,movement_date,quantity,movement_type,unit_cost,notes,vouchers!stock_company_voucher_fkey(voucher_no,voucher_type)")
+        allReportRows(db.from("stock_movements").select("id,voucher_id,product_id,movement_date,quantity,movement_type,unit_cost,notes,vouchers!stock_company_voucher_fkey(voucher_no,voucher_type)")
           .eq("company_id", company.id).gte("movement_date", dateFrom).lte("movement_date", dateTo).order("movement_date").order("created_at").order("id")).then(data=>({data,error:null})),
         allReportRows(db.from("stock_movements").select("product_id,quantity").eq("company_id", company.id).gt("movement_date", dateTo).order("id")).then(data=>({data,error:null})),
       ]);
