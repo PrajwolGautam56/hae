@@ -1,0 +1,20 @@
+.sales-bill-register { min-width: 0; }
+.bill-register-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 0 22px 14px; }
+.bill-register-filters label { display: grid; gap: 7px; min-width: 0; color: #526079; font-size: 13px; font-weight: 600; }
+.bill-register-filters label:first-child { flex: 1 1 220px; }
+.bill-register-filters input, .bill-register-filters select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid #d9e1ed; border-radius: 10px; background: #fff; color: #172b46; font: inherit; font-size: 16px; }
+.bill-register-filters p { flex-basis: 100%; margin: 0; color: #64748b; font-size: 12px; line-height: 1.6; }
+.bill-register-feedback { padding: 8px 22px 16px; color: #526079; font-size: 13px; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.bill-register-reference { padding: 10px 12px; min-width: 44px; min-height: 44px; border: 1px solid #dce6fb; border-radius: 8px; color: #245edb; background: #f1f5ff; font: inherit; font-weight: 700; cursor: pointer; }
+.bill-register-reference:focus-visible, .bill-register-filters :focus-visible, .bill-register-pagination button:focus-visible { outline: 3px solid #86a9ff; outline-offset: 2px; }
+.bill-register-pagination { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; padding: 18px 22px; border-top: 1px solid #e7edf5; color: #526079; font-size: 13px; }
+.bill-register-pagination > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.bill-register-pagination button { min-height: 44px; }
+.bill-register-pagination button:disabled { opacity: .45; cursor: default; box-shadow: none; }
+@media (max-width: 600px) {
+  .bill-register-filters, .bill-register-feedback, .bill-register-pagination { padding-left: 14px; padding-right: 14px; }
+  .bill-register-filters label { flex: 1 1 100%; width: 100%; }
+  .bill-register-pagination > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .bill-register-pagination button { width: 100%; min-width: 0; justify-content: center; }
+}
+@media print { .bill-register-filters, .bill-register-pagination, .bill-register-feedback { display: none; } .bill-register-reference { border: 0; background: none; color: inherit; padding: 0; } }

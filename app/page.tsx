@@ -23,6 +23,7 @@ import { amountInWords } from "../lib/amount-in-words";
 import { voucherPrintHtml } from "../lib/voucher-print";
 import VoucherPrintPreview from "./voucher-print-preview";
 import PartyDetailsEditor from "./party-details-editor";
+import SalesBillRegister from "./sales-bill-register";
 import { matchingParties } from "../lib/party-search";
 import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
@@ -719,9 +720,6 @@ export default function Home() {
   const saleTax =
     ((saleSubtotal - saleDiscount) * Math.max(0, taxPercent)) / 100;
   const saleGrand = saleSubtotal - saleDiscount + saleTax;
-  const salesTransactions = transactions.filter(
-    (t) => t.type === "Sales Invoice",
-  );
   const stockValue = products.reduce(
     (sum, product) =>
       sum + Number(product.stock_qty || 0) * Number(product.purchase_price || 0),
@@ -1104,68 +1102,7 @@ export default function Home() {
                   <strong>{nextInvoice} · NB {nextNumbers.sale_non_vat}</strong>
                 </article>
               </div>
-              <article className="card sales-list">
-                <div className="card-title">
-                  <div>
-                    <h3>Sales bill register</h3>
-                    <p>Latest invoice is shown first</p>
-                  </div>
-                  <button className="primary soft" onClick={openSale}>
-                    ＋ New bill
-                  </button>
-                </div>
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>INVOICE</th>
-                        <th>DATE</th>
-                        <th>PARTY</th>
-                        <th>AMOUNT</th>
-                        <th>STATUS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {salesTransactions.length ? (
-                        salesTransactions.map((t) => (
-                          <tr key={t.id} className="clickable-voucher" tabIndex={0} onClick={() => openVoucherDetail(t.id)} onKeyDown={(e) => e.key === "Enter" && openVoucherDetail(t.id)}>
-                            <td>
-                              <strong>{t.ref || t.sequence_no}</strong>
-                            </td>
-                            <td>
-                              {calendar === "BS"
-                                ? bsDate(t.date)
-                                : adDate(t.date)}
-                            </td>
-                            <td>{t.document_status === "cancelled" ? "Cancelled bill" : t.party}</td>
-                            <td className="debit">{money(t.document_status === "cancelled" ? 0 : t.debit)}</td>
-                            <td>
-                              <span className={t.document_status === "cancelled" ? "cancelled-chip" : "paid-chip"}>{t.document_status === "cancelled" ? "Cancelled" : "Posted"}</span>
-                            </td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={5} className="empty-year">
-                            No sales invoice in this fiscal year. The next
-                            invoice will start at 1.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="mobile-register-list">
-                  {salesTransactions.map((transaction) => (
-                    <button key={transaction.id} onClick={() => openVoucherDetail(transaction.id)}>
-                      <span><strong>Invoice #{transaction.ref || transaction.sequence_no}</strong><small>{transaction.document_status === "cancelled" ? "Cancelled bill" : transaction.party}</small></span>
-                      <span className="mobile-register-amount"><strong>{money(transaction.document_status === "cancelled" ? 0 : transaction.debit)}</strong><small>{calendar === "BS" ? bsDate(transaction.date) : adDate(transaction.date)}</small></span>
-                      <span className="mobile-register-meta"><span>{transaction.ref}</span><span className={transaction.document_status === "cancelled" ? "cancelled-chip" : "paid-chip"}>{transaction.document_status === "cancelled" ? "Cancelled" : "Posted"}</span></span>
-                    </button>
-                  ))}
-                  {!salesTransactions.length && <div className="dashboard-empty">No sales invoice in this fiscal year. Next invoice starts at 1.</div>}
-                </div>
-              </article>
+              <SalesBillRegister key={`${company?.id}:${fiscalYear?.id}`} fiscalYearId={fiscalYear?.id} refreshVersion={reportVersion} onNewBill={openSale} onOpenBill={openVoucherDetail} formatDate={calendar === "BS" ? bsDate : adDate} />
             </section>
           ) : active === "Quotations" ? (
             <DocumentsWorkspace key={fiscalYear?.id} fiscalYear={fiscalYear} parties={parties} products={products} />

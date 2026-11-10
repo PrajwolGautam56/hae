@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 const migration = await readFile(new URL('../supabase/migrations/202611080001_cancelled_sales_invoices.sql', import.meta.url), 'utf8');
 const api = await readFile(new URL('../app/api/accounting/route.ts', import.meta.url), 'utf8');
 const page = await readFile(new URL('../app/page.tsx', import.meta.url), 'utf8');
+const register = await readFile(new URL('../app/sales-bill-register.tsx', import.meta.url), 'utf8');
 const suite = await readFile(new URL('../app/api/accounting-suite/route.ts', import.meta.url), 'utf8');
 
 test('a new cancelled bill reserves a normal fiscal-year sale number with no financial posting', () => {
@@ -32,6 +33,6 @@ test('the editor and register expose cancelled bills without letting them be rep
   assert.match(api, /voucher_type,document_status,number_series,voucher_no/);
   assert.match(page, /Cancelled bill \/ reserve this invoice number/);
   assert.match(page, /Confirm cancellation/);
-  assert.match(page, /document_status === "cancelled" \? "Cancelled" : "Posted"/);
+  assert.match(register, /document_status === "cancelled" \? "Cancelled" : "Posted"/);
   assert.match(suite, /\.eq\("document_status", "posted"\)\.lte\("voucher_date"/);
 });
