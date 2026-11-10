@@ -122,6 +122,7 @@ test("report center includes financial, ageing, tax and stock controls", async (
     assert.match(workspace, new RegExp(report));
   }
   assert.match(await source("lib/connected-reports.ts"), /allocation:\s*"Net party FIFO"/);
-  assert.match(workspace, /0–30 DAYS/);
+  assert.match(workspace, /1–30 DAYS OVERDUE/);
+  assert.match(workspace, /OVERDUE TOTAL/);
   assert.match(workspace, /ABOVE 90 DAYS/);
 });

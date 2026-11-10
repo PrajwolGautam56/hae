@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import BsDateInput from "./bs-date-input";
 import PartyOpeningEditor from "./party-opening-editor";
 import ReportVoucherReference from "./report-voucher-reference";
+import PartyDueSummary from "./party-due-summary";
 import { formatBs, adToBsParts, bsToAd, bsMonths } from "../lib/nepali-date";
 import { downloadCsv, printDocument } from "../lib/export-data";
 import {
@@ -301,9 +302,12 @@ export default function ReportsWorkspace({
       downloadCsv(name, data.rows, [
         { label: "Party", value: (r: any) => r.party },
         { label: "Place", value: (r: any) => r.place },
-        { label: "Not due", value: (r: any) => r.notDue },
+        { label: "As of (BS)", value: () => formatBs(data.asOf || data.to) },
+        { label: "Not overdue (includes due today)", value: (r: any) => r.notDue },
+        { label: "Due today", value: (r: any) => r.dueToday },
+        { label: "Overdue total", value: (r: any) => r.overdue },
         { label: "Unknown opening age", value: (r: any) => r.unknown },
-        { label: "0-30 days", value: (r: any) => r.current },
+        { label: "1–30 days overdue", value: (r: any) => r.current },
         { label: "31-60 days", value: (r: any) => r.days31to60 },
         { label: "61-90 days", value: (r: any) => r.days61to90 },
         { label: "Above 90 days", value: (r: any) => r.above90 },
@@ -567,6 +571,7 @@ export default function ReportsWorkspace({
         </div>
       )}
       {openingEditor && partyId && type === "daybook" && <PartyOpeningEditor key={`${partyId}:${fiscalYear.id}`} partyId={partyId} fiscalYearId={fiscalYear.id} onClose={()=>setOpeningEditor(false)} onSaved={()=>{invalidateClientCache();setOpeningEditor(false);onNotice("Opening balance saved. Ledger and future-year balances updated.");onBalancesChanged?.();void run();}}/>}
+      {partyId && data && type === "daybook" && <PartyDueSummary data={data.receivableAgeing} onOpenVoucher={onOpenVoucher}/>}
       {data &&
         [
           "sales",
@@ -969,8 +974,9 @@ function AgingTable({
           <h3>{payable ? "Aged payable" : "Aged receivable"}</h3>
           <p>
             Net party FIFO · overdue days as of{" "}
-            {data?.to ? formatBs(data.to) : "selected date"}
+            {data?.asOf ? formatBs(data.asOf) : "selected date"}
           </p>
+          {data?.dateBasis && <p>{data.dateBasis}</p>}
         </div>
       </div>
       <div className="table-wrap">
@@ -979,9 +985,10 @@ function AgingTable({
             <tr>
               <th>PARTY</th>
               <th>PLACE / PHONE</th>
-              <th>NOT DUE</th>
+              <th>NOT OVERDUE / DUE TODAY</th>
+              <th>OVERDUE TOTAL</th>
               <th>OPENING AGE UNKNOWN</th>
-              <th>0–30 DAYS</th>
+              <th>1–30 DAYS OVERDUE</th>
               <th>31–60 DAYS</th>
               <th>61–90 DAYS</th>
               <th>ABOVE 90 DAYS</th>
@@ -999,6 +1006,7 @@ function AgingTable({
                     {[row.place, row.phone].filter(Boolean).join(" · ") || "—"}
                   </td>
                   <td>{row.notDue ? money(row.notDue) : "—"}</td>
+                  <td className="debit"><strong>{row.overdue ? money(row.overdue) : "—"}</strong></td>
                   <td>{row.unknown ? money(row.unknown) : "—"}</td>
                   <td>{row.current ? money(row.current) : "—"}</td>
                   <td>{row.days31to60 ? money(row.days31to60) : "—"}</td>
@@ -1013,8 +1021,8 @@ function AgingTable({
               ))
             ) : (
               <tr>
-                <td className="empty-year" colSpan={9}>
-                  {loading ? "Calculating ageing…" : "No outstanding amount."}
+                <td className="empty-year" colSpan={10}>
+                  {loading ? "Calculating ageing…" : data?.futureYear ? "This financial year has not started; future balances are not treated as currently overdue." : "No outstanding amount."}
                 </td>
               </tr>
             )}
@@ -1026,6 +1034,7 @@ function AgingTable({
                   <strong>Total</strong>
                 </td>
                 <td>{money(data.totals.notDue)}</td>
+                <td>{money(data.totals.overdue)}</td>
                 <td>{money(data.totals.unknown)}</td>
                 <td>{money(data.totals.current)}</td>
                 <td>{money(data.totals.days31to60)}</td>

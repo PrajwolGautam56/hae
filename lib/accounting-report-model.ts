@@ -102,14 +102,18 @@ export function ageParty(
     due: string | null;
     reference: string;
     remaining: number;
+    original: number;
+    voucherId: string | null;
+    invoiceDate: string | null;
+    dueSource: "due_date" | "invoice_date" | "unknown";
   }[] = [];
   let credit = 0;
-  const apply = (signed: number, due: string | null, reference: string) => {
+  const apply = (signed: number, due: string | null, reference: string, voucherId: string | null = null, invoiceDate: string | null = null, dueSource: "due_date" | "invoice_date" | "unknown" = "unknown") => {
     if (signed > 0) {
       const offset = Math.min(credit, signed);
       credit -= offset;
       if (signed > offset)
-        obligations.push({ due, reference, remaining: signed - offset });
+        obligations.push({ due, reference, remaining: signed - offset, original:signed, voucherId, invoiceDate, dueSource });
     } else {
       let available = -signed;
       for (const item of obligations) {
@@ -155,6 +159,9 @@ export function ageParty(
       (cents(entry.debit) - cents(entry.credit)) * direction,
       entry.due_date || entry.entry_date,
       entry.voucher_no || entry.id,
+      entry.voucher_id || null,
+      entry.voucher_date || entry.entry_date,
+      entry.due_date ? "due_date" : "invoice_date",
     );
   }
   const buckets = {
@@ -178,7 +185,7 @@ export function ageParty(
       const bucket =
         days === null
           ? "unknown"
-          : days < 0
+          : days <= 0
             ? "notDue"
             : days <= 30
               ? "current"
@@ -190,8 +197,14 @@ export function ageParty(
       buckets[bucket] += o.remaining;
       return {
         reference: o.reference,
+        voucherId: o.voucherId,
+        invoiceDate: o.invoiceDate,
         due: o.due,
+        dueSource: o.dueSource,
         overdueDays: days,
+        status: days === null ? "unknown" : days > 0 ? "overdue" : days === 0 ? "due_today" : "not_due",
+        originalAmount: rupees(o.original),
+        settledAmount: rupees(o.original - o.remaining),
         remaining: rupees(o.remaining),
       };
     });
@@ -201,6 +214,10 @@ export function ageParty(
     ),
     total: rupees(Object.values(buckets).reduce((a, b) => a + b, 0)),
     advance: rupees(credit),
+    overdue: rupees(details.filter(d=>d.status==="overdue").reduce((sum,d)=>sum+cents(d.remaining),0)),
+    dueToday: rupees(details.filter(d=>d.status==="due_today").reduce((sum,d)=>sum+cents(d.remaining),0)),
+    oldestOverdueDays: details.reduce((max,d)=>Math.max(max,d.overdueDays || 0),0),
+    overdueEntries: details.filter(d=>d.status==="overdue").length,
     details,
   };
 }

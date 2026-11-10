@@ -83,7 +83,10 @@ test("ageing retains old invoice ages, unknown opening dates, and exact boundari
   assert.equal(a.above90, 200);
   assert.equal(a.days61to90, 100);
   assert.equal(a.days31to60, 100);
-  assert.equal(a.current, 200);
+  assert.equal(a.current, 100);
+  assert.equal(a.notDue, 100);
+  assert.equal(a.dueToday, 100);
+  assert.equal(a.overdue, 500);
   assert.equal(a.total, 650);
   const b = ageParty(
     0,

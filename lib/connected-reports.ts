@@ -14,6 +14,7 @@ export async function connectedReport(
   from: string,
   to: string,
   partyId: string | null,
+  businessToday = new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kathmandu",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()),
 ) {
   const envelope = { company, fiscalYear: fy, from, to, reportType: type };
   if (type === "monthly_accounting") {
@@ -129,32 +130,23 @@ export async function connectedReport(
       openings.find((o) => o.party_id === p.id && o.fiscal_year_id === fy.id)
         ?.amount ?? p.opening_balance,
     );
+  const ageingAsOf = to < businessToday ? to : businessToday;
+  const ageingFor = (p: any, payable=false) => {
+    const all=byParty.get(p.id)||[];
+    const prior=all.filter(e=>e.entry_date<fy.start_ad);
+    // Anchor old invoice history to the recorded FY opening; never add it a second time.
+    const base=openingFor(p)-rupees(prior.reduce((sum,e)=>sum+cents(e.debit)-cents(e.credit),0));
+    return ageParty(base,all.map(e=>({...e,due_date:e.vouchers?.due_date,voucher_date:e.vouchers?.voucher_date,voucher_no:e.vouchers?.voucher_no})),ageingAsOf,payable);
+  };
   if (type.startsWith("aging_")) {
-    const rows = scoped
+    const rows = (ageingAsOf < fy.start_ad ? [] : scoped)
       .map((p) => {
-        const all = byParty.get(p.id) || [];
-        const prior = all.filter((e) => e.entry_date < fy.start_ad);
-        // Anchor history to this year's opening, preserving historical invoice ages.
-        const base =
-          openingFor(p) -
-          rupees(
-            prior.reduce((s, e) => s + cents(e.debit) - cents(e.credit), 0),
-          );
         return {
           id: p.id,
           party: p.name,
           place: p.place,
           phone: p.phone,
-          ...ageParty(
-            base,
-            all.map((e) => ({
-              ...e,
-              due_date: e.vouchers?.due_date,
-              voucher_no: e.vouchers?.voucher_no,
-            })),
-            to,
-            type === "aging_payable",
-          ),
+          ...ageingFor(p,type === "aging_payable"),
         };
       })
       .filter((r) => r.total > 0)
@@ -167,6 +159,8 @@ export async function connectedReport(
       "above90",
       "unknown",
       "total",
+      "overdue",
+      "dueToday",
     ];
     const totals = Object.fromEntries(
       keys.map((k) => [
@@ -179,8 +173,10 @@ export async function connectedReport(
       rows,
       totals,
       allocation: "Net party FIFO",
+      asOf: ageingAsOf,
+      futureYear: ageingAsOf < fy.start_ad,
       dateBasis:
-        "Due date; invoice date when no due date exists. Opening balances without original dates are shown separately.",
+        "Oldest-entry-first settlement, as of the earlier of the selected end date and today. Overdue means the due date has passed; due today is not overdue. Invoice date is used when no due date exists. Undated opening balances are separate.",
     };
   }
   const balances = scoped.map((p) => {
@@ -281,6 +277,7 @@ export async function connectedReport(
     return {
       ...envelope,
       party: selected,
+      receivableAgeing: ageingAsOf < fy.start_ad ? null : {...ageingFor(selected),asOf:ageingAsOf},
       fiscalYearOpening: openingFor(selected),
       openingSource: openings.find(o => o.party_id === partyId && o.fiscal_year_id === fy.id)?.balance_source || "legacy",
       openingNote: openings.find(o => o.party_id === partyId && o.fiscal_year_id === fy.id)?.note || "",
