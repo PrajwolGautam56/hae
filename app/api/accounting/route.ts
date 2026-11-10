@@ -329,7 +329,7 @@ export async function POST(request: Request) {
     if (!partyId && body.partyName) {
       const { data, error } = await supabase
         .from("parties")
-        .upsert(
+        .insert(
           {
             company_id: state.company.id,
             name: String(body.partyName),
@@ -338,12 +338,18 @@ export async function POST(request: Request) {
             tax_no: String(body.taxNo || "") || null,
             party_type: type === "purchase" ? "supplier" : "customer",
           },
-          { onConflict: "company_id,name" },
         )
         .select("id")
         .single();
-      if (error) throw error;
-      partyId = data.id;
+      if (error?.code === "23505") {
+        // An inline duplicate must not blank an existing party's edited contact/PAN details.
+        const existing = await supabase.from("parties").select("id").eq("company_id",state.company.id).eq("name",String(body.partyName)).single();
+        if(existing.error)throw existing.error;
+        partyId=existing.data.id;
+      } else {
+        if (error) throw error;
+        partyId = data.id;
+      }
     }
     const lineProductIds = lines.map((line: unknown) => typeof line === "object" && line !== null ? (line as Record<string, unknown>).product_id : null);
     await Promise.all([

@@ -284,6 +284,7 @@ export async function connectedReport(
       fiscalYearOpening: openingFor(selected),
       openingSource: openings.find(o => o.party_id === partyId && o.fiscal_year_id === fy.id)?.balance_source || "legacy",
       openingNote: openings.find(o => o.party_id === partyId && o.fiscal_year_id === fy.id)?.note || "",
+      openingHasPriorRecords: (byParty.get(partyId) || []).some(e=>e.entry_date<fy.start_ad) || openings.some(o=>o.party_id===partyId && o.fiscal_years?.start_ad<fy.start_ad && (Number(o.amount)!==0 || o.balance_source==="manual")),
       opening: balances[0].opening,
       closing: rupees(running),
       rows,

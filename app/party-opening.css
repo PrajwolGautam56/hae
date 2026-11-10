@@ -1,4 +1,5 @@
 .opening-edit-button { justify-self:start; margin-top:4px; min-height:36px; padding:7px 11px; border:1px solid #bed0ef; border-radius:8px; background:#eff5ff; color:#175cd3; font-size:12px; font-weight:700; cursor:pointer; }
+.ledger-opening-row td { background:#f4f7fc; }
 .opening-editor { min-width:0; padding:20px; border:1px solid #c5d5ef; border-radius:16px; background:#fff; box-shadow:0 6px 24px #172b4d08; }
 .opening-editor-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .opening-editor h3 { margin:0; font-size:17px; color:#182230; }

@@ -22,6 +22,7 @@ import "./invoice-entry.css";
 import { amountInWords } from "../lib/amount-in-words";
 import { voucherPrintHtml } from "../lib/voucher-print";
 import VoucherPrintPreview from "./voucher-print-preview";
+import PartyDetailsEditor from "./party-details-editor";
 import { matchingParties } from "../lib/party-search";
 import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
@@ -217,6 +218,8 @@ export default function Home() {
   const [outputQuantity, setOutputQuantity] = useState("");
   const [productionInputs, setProductionInputs] = useState([{ productId: "", quantity: 0 }]);
   const [reportPartyId, setReportPartyId] = useState("");
+  const [editingPartyId, setEditingPartyId] = useState("");
+  const [reportVersion, setReportVersion] = useState(0);
   const fiscalRequest = useRef(0);
   const visibleParties = useMemo(
     () =>
@@ -1182,6 +1185,8 @@ export default function Home() {
               initialPartyId={reportPartyId}
               onNotice={setNotice}
               onOpenVoucher={openVoucherDetail}
+              onEditParty={["admin","manager","accountant"].includes(currentMember?.role || "") ? setEditingPartyId : undefined}
+              refreshVersion={reportVersion}
               canManageOpenings={["admin","manager","accountant"].includes(currentMember?.role || "")}
               onBalancesChanged={() => {
                 clearReportCache();
@@ -1301,6 +1306,7 @@ export default function Home() {
                           <th>PAN</th>
                           <th>OPENING</th>
                           <th>BALANCE</th>
+                          {["admin","manager","accountant"].includes(currentMember?.role || "") && <th>DETAILS</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -1314,7 +1320,7 @@ export default function Home() {
                               setActive("Reports");
                             }}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") {
+                              if (e.key === "Enter" && e.target === e.currentTarget) {
                                 setReportPartyId(p.id);
                                 setActive("Reports");
                               }
@@ -1328,6 +1334,7 @@ export default function Home() {
                             <td>{p.tax_no || "—"}</td>
                             <td>{money(Number(p.opening_balance))}</td>
                             <td>{money(Number(p.balance))}</td>
+                            {["admin","manager","accountant"].includes(currentMember?.role || "") && <td><button className="table-action" onClick={event=>{event.stopPropagation();setEditingPartyId(p.id);}}>Edit details</button></td>}
                           </tr>
                         ))}
                       </tbody>
@@ -1376,11 +1383,11 @@ export default function Home() {
                   ) : active === "Parties" ? (
                     <>
                       {parties.map((party) => (
-                        <button key={party.id} onClick={() => { setReportPartyId(party.id); setActive("Reports"); }}>
-                          <span><strong>{party.name}</strong><small>{[party.place, party.phone].filter(Boolean).join(" · ") || "No contact details"}</small></span>
+                        <div className="mobile-register-card" key={party.id}>
+                          <span><button className="party-ledger-action" onClick={() => { setReportPartyId(party.id); setActive("Reports"); }}><strong>{party.name}</strong></button><small>{[party.place, party.phone].filter(Boolean).join(" · ") || "No contact details"}</small></span>
                           <span className="mobile-register-amount"><strong>{money(Number(party.balance))}</strong><small>{Number(party.balance) < 0 ? "Advance" : "To receive"}</small></span>
-                          <span className="mobile-register-meta"><span>{party.tax_no ? `PAN ${party.tax_no}` : "PAN not added"}</span><span>View ledger ›</span></span>
-                        </button>
+                          <span className="mobile-register-meta"><span>{party.tax_no ? `PAN ${party.tax_no}` : "PAN not added"}</span><button className="mobile-register-edit" onClick={() => {setReportPartyId(party.id);setActive("Reports");}}>View ledger ›</button>{["admin","manager","accountant"].includes(currentMember?.role || "")&&<button className="mobile-register-edit" onClick={()=>setEditingPartyId(party.id)}>Edit details</button>}</span>
+                        </div>
                       ))}
                       {!parties.length && <div className="dashboard-empty">No parties added yet.</div>}
                     </>
@@ -1404,6 +1411,15 @@ export default function Home() {
         </div>
       </section>
 
+      {editingPartyId && <PartyDetailsEditor key={editingPartyId} partyId={editingPartyId} onClose={()=>setEditingPartyId("")} onSaved={edited=>{
+        setEditingPartyId("");
+        setParties(current=>current.map(p=>p.id===edited.id?{...p,...edited,initials:edited.name.split(" ").map((s:string)=>s[0]).slice(0,2).join("")}:p));
+        clearReportCache();
+        try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith("hae-snapshot-"))sessionStorage.removeItem(key);}}catch{}
+        setReportVersion(v=>v+1);
+        setNotice("Party details updated. Bills and ledger amounts are unchanged.");
+        void changeFiscalYear(fiscalYear.id).catch(()=>setNotice("Party details are saved, but the dashboard could not refresh. Reload to see the latest details."));
+      }}/>}
       {voucherDetail && (
         <div className="modal-backdrop" onMouseDown={closeVoucherDetail}>
           <section className="modal voucher-detail-modal" onMouseDown={(e) => e.stopPropagation()}>

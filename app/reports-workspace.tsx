@@ -70,6 +70,8 @@ export default function ReportsWorkspace({
   canManageOpenings = false,
   onBalancesChanged,
   onOpenVoucher,
+  onEditParty,
+  refreshVersion = 0,
 }: {
   parties: any[];
   fiscalYear: any;
@@ -78,6 +80,8 @@ export default function ReportsWorkspace({
   canManageOpenings?: boolean;
   onBalancesChanged?: () => void;
   onOpenVoucher?: (id: string) => void;
+  onEditParty?: (id: string) => void;
+  refreshVersion?: number;
 }) {
   const now =
     businessDate() < fiscalYear.start_ad
@@ -100,6 +104,7 @@ export default function ReportsWorkspace({
   );
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [reportError, setReportError] = useState("");
   const [openingEditor, setOpeningEditor] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
   async function classifyBill(voucherId: string, billCategory: string) {
@@ -140,7 +145,7 @@ export default function ReportsWorkspace({
     if (!fiscalYear?.id) return;
     const timer = setTimeout(run, 80);
     return () => clearTimeout(timer);
-  }, [partyId, type, accountId, from, to, fiscalYear?.id]);
+  }, [partyId, type, accountId, from, to, fiscalYear?.id, refreshVersion]);
   const firstMonth = adToBsParts(fiscalYear.start_ad);
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
     const m = firstMonth.month - 1 + i;
@@ -192,6 +197,7 @@ export default function ReportsWorkspace({
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
+    setReportError("");
     try {
       const q = new URLSearchParams({
         fiscalYearId: fiscalYear.id,
@@ -211,8 +217,10 @@ export default function ReportsWorkspace({
       });
       if (!controller.signal.aborted) setData(d);
     } catch (e) {
-      if ((e as any)?.name !== "AbortError")
-        onNotice(e instanceof Error ? e.message : "Report could not load");
+      if ((e as any)?.name !== "AbortError" && !controller.signal.aborted) {
+        const message=e instanceof Error ? e.message : "Report could not load";
+        setReportError(message);onNotice(message);
+      }
     } finally {
       if (requestRef.current === controller) setLoading(false);
     }
@@ -372,6 +380,7 @@ export default function ReportsWorkspace({
           </p>
         </div>
         <div className="hero-actions">
+          {partyId && data?.party && onEditParty && <button className="primary soft" onClick={()=>onEditParty(partyId)}>✎ Edit party details</button>}
           <button
             className="primary soft"
             disabled={loading || !data}
@@ -526,6 +535,7 @@ export default function ReportsWorkspace({
           {loading ? "Loading…" : "Apply report"}
         </button>
       </article>
+      {reportError && <div className="invoice-draft-alert" role="alert"><strong>Could not load this report. Existing records have not been removed.</strong><span>{reportError}</span><button type="button" onClick={()=>void run()}>Retry report</button></div>}
       {partyId && data && type === "daybook" && (
         <div className="ledger-summary">
           <article>
@@ -535,7 +545,7 @@ export default function ReportsWorkspace({
             <span>{data.openingSource === "manual" ? "Manual · previous software / records" : data.openingSource === "carry_forward" ? "Brought forward from previous FY" : "Recorded FY opening"}</span>
             {from !== fiscalYear.start_ad && <span>FY opening: {money(data.fiscalYearOpening)} {Number(data.fiscalYearOpening)<0?"Cr":"Dr"}</span>}
             {data.openingNote && <span>{data.openingNote}</span>}
-            {canManageOpenings && <button className="opening-edit-button" onClick={()=>setOpeningEditor(value=>!value)}>{Number(data.fiscalYearOpening)===0 && data.openingSource!=="manual"?"＋ Add Opening Balance":"✎ Edit Opening Balance"}</button>}
+            {canManageOpenings && <button className="opening-edit-button" onClick={()=>setOpeningEditor(value=>!value)}>{data.openingHasPriorRecords?"View carried opening":Number(data.fiscalYearOpening)===0 && data.openingSource!=="manual"?"＋ Add Opening Balance":"✎ Edit Opening Balance"}</button>}
           </article>
           <article>
             <small>PERIOD DEBIT</small>
@@ -882,6 +892,7 @@ function VoucherReportTable({
             </tr>
           </thead>
           <tbody>
+            {partyId && data && <tr className="ledger-opening-row"><td>{formatBs(from)}</td><td>—</td><td><strong>Opening balance</strong></td><td>{from!==data.fiscalYear?.start_ad?"Balance before selected period":data.openingSource==="manual"?"Imported from previous records":"Brought forward"}</td><td className="debit">{Number(data.opening)>0?money(data.opening):"—"}</td><td className="credit">{Number(data.opening)<0?money(data.opening):"—"}</td><td><strong>{money(data.opening)} {Number(data.opening)>=0?"Dr":"Cr"}</strong></td></tr>}
             {data?.rows?.length ? (
               data.rows.map((r: any) => (
                 <tr key={r.id}>
@@ -908,7 +919,7 @@ function VoucherReportTable({
               ))
             ) : (
               <tr>
-                <td className="empty-year" colSpan={partyId ? 8 : 7}>
+                <td className="empty-year" colSpan={7}>
                   {loading
                     ? "Loading report…"
                     : "No transactions for this filter."}
