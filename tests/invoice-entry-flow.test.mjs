@@ -39,7 +39,7 @@ const responseHandler = page.slice(page.indexOf('    const data = await response
   page.indexOf('\n  function openSale()'));
 const handlerBody = responseHandler.slice(0, responseHandler.lastIndexOf('\n  }'));
 async function runSaveResponse({ type = 'sale', editing = '', ok = true, cancelled = false, series = 'standard' } = {}) {
-  const state = { modal: type, formParty: 'Old party', saleLines: [{ name: 'Old item' }], discountPercent: 10, nextNumbers: { sale: 3, receipt: 7 } };
+  const state = { modal: type, formParty: 'Old party', saleLines: [{ name: 'Old item' }], discountPercent: 10, nextNumbers: { sale: 3, receipt: 7 }, reportVersion: 0 };
   const effects = [];
   const context = {
     modal: type, editingVoucherId: editing, kind: 'Invoice', isCancelledSale: cancelled,
@@ -105,6 +105,7 @@ test('editing a sale and saving other voucher types still closes the editor', as
     const { state, effects } = await runSaveResponse(options);
     assert.equal(state.modal, null);
     assert.equal(effects.includes('focus'), false);
+    assert.equal(state.reportVersion,1,'A report still open behind a receipt editor must refresh after the committed payment');
   }
 });
 
@@ -115,6 +116,7 @@ test('rejected save preserves the draft and number without refreshing or closing
   assert.deepEqual(state.saleLines, [{ name: 'Old item' }]);
   assert.equal(state.nextNumbers.sale, 3);
   assert.equal(state.notice, 'Stock unavailable');
+  assert.equal(state.reportVersion,0);
   assert.deepEqual(effects, []);
 });
 

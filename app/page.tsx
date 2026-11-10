@@ -496,6 +496,7 @@ export default function Home() {
     setDraftStored(true);
     setDraftRestored(false);
     clearReportCache();
+    setReportVersion(version => version + 1);
     invalidateClientCache("cheques:");
     invalidateClientCache("funds:");
     invalidateClientCache("crm:");
