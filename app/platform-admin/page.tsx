@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import PlatformSmsCredits from "../platform-sms-credits";
 
 type Tenant = {
   id: string;
@@ -558,6 +559,7 @@ export default function PlatformAdminPage() {
                         </span>
                       </div>
                       <details style={{margin:"16px 0",overflowWrap:"anywhere"}}><summary>Domain setup · staff checklist</summary><ol><li>Add <strong>{tenant.primary_domain}</strong> to the existing app in <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Vercel → Settings → Domains</a>.</li><li>In <a href="https://dash.cloudflare.com/" target="_blank" rel="noreferrer">Cloudflare → DNS</a>, add a CNAME for this subdomain. Copy the exact target provided by Vercel{data.dnsTarget?` (configured platform target: ${data.dnsTarget})`:""}. Use DNS-only until verification completes.</li><li>Wait for Vercel to verify the domain and HTTPS certificate, then open the client link above and test the first administrator login.</li></ol><p>No new deployment, branch, database project or tables are needed. A DNS record alone does not activate a Vercel hostname.</p></details>
+                      <PlatformSmsCredits tenantId={tenant.id} />
                       {canEdit && <div className="pc-card-actions">
                         <button
                           onClick={() => setModal({ type: "tenant", tenant })}

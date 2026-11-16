@@ -24,6 +24,7 @@ import { voucherPrintHtml } from "../lib/voucher-print";
 import VoucherPrintPreview from "./voucher-print-preview";
 import PartyDetailsEditor from "./party-details-editor";
 import SalesBillRegister from "./sales-bill-register";
+import OverdueReminders from "./overdue-reminders";
 import { matchingParties } from "../lib/party-search";
 import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
@@ -909,6 +910,7 @@ export default function Home() {
                 </button>
               </section>
 
+              <OverdueReminders key={company?.id} refreshVersion={reportVersion} onOpenParty={id => { setReportPartyId(id); setActive("Reports"); }} onEditParty={["admin","manager","accountant"].includes(currentMember?.role || "") ? setEditingPartyId : undefined} />
               <div className="dashboard-grid">
                 <OverviewAnalytics key={fiscalYear?.id} months={monthlyPerformance} fiscalLabel={fiscalYear?.label_bs || "—"} currentKey={overviewBs ? `${overviewBs.year}-${overviewBs.month}` : ""} onOpen={target => { if (visibleNav.includes(target)) setActive(target); else setNotice("This module is not enabled for your company."); }} />
 
