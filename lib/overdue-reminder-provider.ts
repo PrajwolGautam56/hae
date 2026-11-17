@@ -1,10 +1,11 @@
 import { normalizeEmailSender } from "./resend-email";
 import { smsEstimate, smsPhone } from "./overdue-reminder-model";
+import {messagingValue} from "./messaging-runtime";
 
 export type ProviderOutcome = { status: "accepted" | "failed" | "unknown"; providerId?: string; detail: string };
 export function reminderProviderReady(channel: "sms" | "email") {
-  if (process.env.OVERDUE_REMINDERS_ENABLED !== "true") return { ready: false, reason: "Reminder sending has not been activated by the platform administrator" };
-  if (channel === "sms") return { ready: Boolean(process.env.SMSPASAL_API_KEY && process.env.SMSPASAL_SENDER_ID && process.env.SMSPASAL_ROUTE_ID && process.env.SMSPASAL_BILLING_CONFIRMED === "true"), reason: "Configure SMS Pasal credentials/approved sender/route and confirm segment billing before activating paid sends" };
+  if (messagingValue("OVERDUE_REMINDERS_ENABLED") !== "true") return { ready: false, reason: "Reminder sending has not been activated by the platform administrator" };
+  if (channel === "sms") return { ready: Boolean(messagingValue("SMSPASAL_API_KEY") && messagingValue("SMSPASAL_SENDER_ID") && messagingValue("SMSPASAL_ROUTE_ID")), reason: "Configure SMS Pasal credentials, approved sender and route before activating sends" };
   return { ready: Boolean(process.env.RESEND_API_KEY && normalizeEmailSender(process.env.RESEND_FROM_EMAIL)), reason: "Configure a verified Resend sender and API key" };
 }
 
@@ -14,8 +15,8 @@ export async function sendReminderProvider(channel: "sms" | "email", input: { id
   if (!availability.ready) return { status: "failed", detail: availability.reason };
   if (channel === "sms") {
     if (input.message.length > 720) return { status: "failed", detail: "SMS Pasal permits at most 720 characters; shorten party/company names or the reminder" };
-    const payload = new URLSearchParams({ key: process.env.SMSPASAL_API_KEY!, senderid: process.env.SMSPASAL_SENDER_ID!, routeid: process.env.SMSPASAL_ROUTE_ID!, contacts: smsPhone(input.recipient).slice(4), type: smsEstimate(input.message, null).encoding === "GSM-7" ? "text" : "unicode", responsetype: "http", msg: input.message });
-    if (process.env.SMSPASAL_CAMPAIGN_ID) payload.set("campaign", process.env.SMSPASAL_CAMPAIGN_ID);
+    const payload = new URLSearchParams({ key: messagingValue("SMSPASAL_API_KEY")!, senderid: messagingValue("SMSPASAL_SENDER_ID")!, routeid: messagingValue("SMSPASAL_ROUTE_ID")!, contacts: smsPhone(input.recipient).slice(4), type: smsEstimate(input.message, null).encoding === "GSM-7" ? "text" : "unicode", responsetype: "http", msg: input.message });
+    if (messagingValue("SMSPASAL_CAMPAIGN_ID")) payload.set("campaign", messagingValue("SMSPASAL_CAMPAIGN_ID")!);
     try {
       const response = await fetch("https://sms.smspasal.com/smsapi/index.php", { method: "POST", redirect: "error", signal: AbortSignal.timeout(12_000), headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: payload.toString() });
       const text = (await response.text()).trim();

@@ -44,7 +44,7 @@ test('provider uses SMS Pasal POST, strips country prefix, selects Unicode when 
   globalThis.fetch=async()=>{count++;throw new Error('timeout');};assert.equal((await sendReminderProvider('sms',{id:randomUUID(),recipient:'+9779841000000',message:'Dear buyer',companyName:'AG'})).status,'unknown');assert.equal(count,2);
   globalThis.fetch=async(url,options)=>{const body=JSON.parse(options.body);assert.equal(body.from,'AG Manufacturing <notify@example.invalid>');assert.equal(options.headers['Idempotency-Key'],'overdue-reminder/test-id');return Response.json({id:'email-id'});};
   assert.equal((await sendReminderProvider('email',{id:'test-id',recipient:'buyer@example.invalid',message:'From AG Manufacturing',companyName:'AG Manufacturing'})).status,'accepted');
-  process.env.SMSPASAL_BILLING_CONFIRMED='false';assert.equal(reminderProviderReady('sms').ready,false);
+  process.env.OVERDUE_REMINDERS_ENABLED='false';assert.equal(reminderProviderReady('sms').ready,false);
  }finally{globalThis.fetch=originalFetch;for(const key of keys){if(old[key]===undefined)delete process.env[key];else process.env[key]=old[key];}}
 });
 
@@ -74,6 +74,6 @@ test('paid-credit routes use platform auth; business routes derive tenant/compan
  const admin=await readFile('app/api/platform/sms/route.ts','utf8'),client=await readFile('app/api/overdue-reminders/route.ts','utf8'),cron=await readFile('app/api/cron/overdue-reminders/route.ts','utf8');
  assert.match(admin,/authorizePlatformAdmin\(request\)/);assert.match(admin,/canManage\(admin\)/);assert.match(admin,/eq\("tenant_id", tenant.id\)/);
  assert.match(client,/getBusinessContext\(db\)/);assert.match(client,/eq\("tenant_id", company.organization_id\)/);assert.match(client,/Only an administrator, manager or accountant/);assert.doesNotMatch(client,/manage_sms_credits|body.tenantId|body.companyId/);
- assert.match(cron,/timingSafeEqual/);assert.match(cron,/expected.length < 32/);assert.match(cron,/OVERDUE_REMINDERS_ENABLED/);
- const widget=await readFile('app/overdue-reminders.tsx','utf8');assert.match(widget,/Insufficient SMS credits/);assert.match(widget,/refreshVersion/);assert.match(widget,/Provider acceptance is not proof of delivery/);
+ assert.match(cron,/timingSafeEqual/);assert.match(cron,/expected.length < 32/);assert.match(cron,/OVERDUE_REMINDERS_ENABLED/);assert.match(cron,/loadMessagingRuntime/);
+ const widget=await readFile('app/overdue-reminders.tsx','utf8');assert.match(widget,/Insufficient SMS credits/);assert.match(widget,/refreshVersion/);assert.match(widget,/Send acceptance is not proof of delivery/);
 });

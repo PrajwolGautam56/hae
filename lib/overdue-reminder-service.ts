@@ -21,7 +21,7 @@ export async function deliverOverdueReminder(db: any, company: any, row: any, wa
   const { data: reservation, error } = await db.rpc("reserve_overdue_reminder", {
     p_company_id: company.id, p_party_id: row.partyId, p_actor_id: input.actorId, p_request_id: input.requestId,
     p_channel: input.channel, p_automatic: input.automatic, p_recipient: recipient, p_message: row.message,
-    p_snapshot: { overdue: row.overdue, total: row.total, oldestOverdueDays: row.oldestOverdueDays, termText: row.termText, asOf: row.asOf, companyName: company.name, oldestDue: row.oldestDue },
+    p_snapshot: { purpose: row.purpose || "overdue", overdue: row.overdue, total: row.total, oldestOverdueDays: row.oldestOverdueDays, termText: row.termText, asOf: row.asOf, companyName: company.name, oldestDue: row.oldestDue },
     p_segments: input.channel === "sms" ? preview.estimate.segments : 0, p_expected_credits: input.channel === "sms" ? preview.estimate.credits : 0,
   });
   if (error) throw error;

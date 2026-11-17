@@ -5,6 +5,8 @@ import { requireFeature } from "../../../lib/feature-access";
 import { companyOverdue } from "../../../lib/overdue-reminder-data";
 import { deliverOverdueReminder, reminderPreview } from "../../../lib/overdue-reminder-service";
 import { reminderProviderReady } from "../../../lib/overdue-reminder-provider";
+import { clientWallet, clientDelivery, clientAvailability, clientMessageError } from "../../../lib/client-messaging";
+import {loadMessagingRuntime} from "../../../lib/messaging-runtime";
 const canSend = (role: string) => ["admin", "manager", "accountant"].includes(role);
 const validId = (value: unknown) => typeof value === "string" && /^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(value);
 export const dynamic = "force-dynamic";
@@ -13,6 +15,7 @@ async function context() {
   await requireFeature("accounting");
   const db = getSupabaseAdmin(); if (!db) throw new Error("Database configuration missing");
   const { company, member } = await getBusinessContext(db);
+  await loadMessagingRuntime();
   if (!company.organization_id) throw new Error("This company has no client organization");
   const { data: wallet, error } = await db.from("sms_credit_wallets").select("balance,held,spent,credited,enabled,credits_per_segment").eq("tenant_id", company.organization_id).maybeSingle();
   if (error) throw error;
@@ -28,9 +31,9 @@ export async function GET() {
       db.from("overdue_reminder_deliveries").select("id", { count: "exact", head: true }).eq("company_id", company.id).eq("channel", "sms").eq("status", "accepted"),
     ]);
     if (history.error || sent.error) throw history.error || sent.error;
-    return NextResponse.json({ ...overdue, rows: overdue.rows.map((row: any) => reminderPreview(row, wallet)), company: { name: company.name }, wallet, smsAccepted: sent.count || 0, history: history.data || [], canSend: canSend(member.role), providers: { sms: reminderProviderReady("sms"), email: reminderProviderReady("email") } }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ ...overdue, rows: overdue.rows.map((row: any) => {const preview=reminderPreview(row,wallet);return {...row,estimate:{credits:preview.estimate.credits},previewHash:preview.previewHash};}), company: { name: company.name }, wallet:clientWallet(wallet), smsAccepted: sent.count || 0, history: (history.data || []).map(clientDelivery), canSend: canSend(member.role), providers: { sms: clientAvailability(reminderProviderReady("sms")), email: clientAvailability(reminderProviderReady("email")) } }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: any) {
-    return NextResponse.json({ error: error.message || "Could not load overdue reminders", setupRequired: /schema cache|does not exist|sms_credit_wallets|auto_overdue/.test(error.message || "") }, { status: 503 });
+    return NextResponse.json({ error: clientMessageError(error), setupRequired: /schema cache|does not exist|sms_credit_wallets|auto_overdue/.test(error.message || "") }, { status: 503 });
   }
 }
 
@@ -47,12 +50,12 @@ export async function POST(request: Request) {
     if (prior.error) throw prior.error;
     if (prior.data) {
       if (prior.data.party_id !== body.partyId || prior.data.channel !== body.channel) return NextResponse.json({ error: "Request ID belongs to another reminder" }, { status: 409 });
-      return NextResponse.json({ delivery: prior.data, duplicate: true });
+      return NextResponse.json({ delivery: clientDelivery(prior.data), duplicate: true });
     }
     const overdue = await companyOverdue(db, company);
     const row = overdue.rows.find((party: any) => party.partyId === body.partyId);
     if (!row) return NextResponse.json({ error: "This party no longer has an overdue balance. Refresh the list" }, { status: 409 });
     const delivery = await deliverOverdueReminder(db, company, row, wallet, { channel: body.channel, requestId: body.requestId, actorId: member.id, automatic: false, previewHash: body.previewHash, expectedCredits: body.expectedCredits });
-    return NextResponse.json({ delivery });
-  } catch (error: any) { return NextResponse.json({ error: error.message || "Reminder could not be sent" }, { status: 409 }); }
+    return NextResponse.json({ delivery:clientDelivery(delivery) });
+  } catch (error: any) { return NextResponse.json({ error: clientMessageError(error) }, { status: 409 }); }
 }

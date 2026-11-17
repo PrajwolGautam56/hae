@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { authorizePlatformAdmin, canManage } from "../../../../lib/platform-admin";
 import { getUnifiedAdmin } from "../../../../lib/supabase-server";
 import { reminderProviderReady } from "../../../../lib/overdue-reminder-provider";
+import {loadMessagingRuntime} from "../../../../lib/messaging-runtime";
 const validId = (value: unknown) => typeof value === "string" && /^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(value);
 export const dynamic = "force-dynamic";
 async function context(request: Request, tenantId: unknown) {
   const { db: control, admin } = await authorizePlatformAdmin(request);
   if (!admin) throw new Error("Platform administrator sign-in required");
+  await loadMessagingRuntime();
   if (!validId(tenantId)) throw new Error("Select a client");
   const tenant = await control.from("platform_tenants").select("id,name").eq("id", tenantId).maybeSingle();
   if (tenant.error) throw tenant.error;
@@ -43,13 +45,13 @@ export async function POST(request: Request) {
       if (error) throw error;
       return NextResponse.json({ saved: true, delivery: data });
     }
-    if (!validId(body.requestId) || !["topup", "settings"].includes(body.action)) throw new Error("Invalid credit action");
+    if (!validId(body.requestId) || !["topup", "adjustment", "settings"].includes(body.action)) throw new Error("Invalid credit action");
     const credits = Number(body.credits), paid = body.paidAmount === "" || body.paidAmount === undefined ? null : Number(body.paidAmount);
     const rate = body.creditsPerSegment === "" || body.creditsPerSegment === null || body.creditsPerSegment === undefined ? null : Number(body.creditsPerSegment);
-    if (body.action === "topup" && (!Number.isSafeInteger(credits) || credits < 1 || credits > 10_000_000 || (paid !== null && (!Number.isFinite(paid) || paid < 0 || Math.abs(paid * 100 - Math.round(paid * 100)) > 0.00001)))) throw new Error("Enter valid whole credits and an optional payment amount with two decimal places");
+    if (["topup","adjustment"].includes(body.action) && (!Number.isSafeInteger(credits) || credits === 0 || Math.abs(credits) > 10_000_000 || (body.action === "topup" && credits < 0) || (paid !== null && (!Number.isFinite(paid) || paid < 0 || Math.abs(paid * 100 - Math.round(paid * 100)) > 0.00001)))) throw new Error("Enter nonzero whole credits and an optional payment amount with two decimal places");
     if (body.action === "settings" && ((rate !== null && (!Number.isSafeInteger(rate) || rate < 1 || rate > 10000)) || typeof body.enabled !== "boolean")) throw new Error("Enter whole credits per segment and enable/disable SMS");
     // The unified tenant mirror must already exist through normal company provisioning.
-    const { data, error } = await db.rpc("manage_sms_credits", { p_tenant_id: tenant.id, p_actor: admin.email, p_request_id: body.requestId, p_action: body.action, p_credits: body.action === "topup" ? credits : 0, p_paid: paid, p_note: note, p_enabled: body.enabled ?? false, p_rate: rate });
+    const { data, error } = await db.rpc("manage_sms_credits", { p_tenant_id: tenant.id, p_actor: admin.email, p_request_id: body.requestId, p_action: body.action, p_credits: ["topup","adjustment"].includes(body.action) ? credits : 0, p_paid: paid, p_note: note, p_enabled: body.enabled ?? false, p_rate: rate });
     if (error) throw error;
     return NextResponse.json({ saved: true, wallet: data });
   } catch (error: any) { return NextResponse.json({ error: error.message || "Could not save SMS credits" }, { status: 400 }); }

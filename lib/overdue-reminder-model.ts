@@ -13,7 +13,7 @@ export function smsPhone(value: string) {
 
 const gsmBasic = new Set([..."@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà"]);
 const gsmExtended = new Set([..."\f^{}\\[~]|€"]);
-/** Provider-neutral estimate; the selected SMS provider must confirm its billing rules. */
+/** Platform client-credit rule, independent of the platform's wholesale SMS purchase cost. */
 export function smsEstimate(text: string, creditsPerSegment: number | null) {
   let units = 0; let gsm = true;
   for (const char of text) { if (gsmBasic.has(char)) units++; else if (gsmExtended.has(char)) units += 2; else { gsm = false; break; } }

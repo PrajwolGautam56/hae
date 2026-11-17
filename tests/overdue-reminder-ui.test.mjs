@@ -9,12 +9,12 @@ test('actual dashboard UI renders separate overdue and total balances with previ
 test('actual platform UI provides audited top-ups and explicit uncertain-send resolution, not a free-form wallet overwrite',async()=>{
  const data={wallet:{balance:100,held:2,spent:8,enabled:true,credits_per_segment:1},ledger:[],pending:[{id:'d',channel:'sms',status:'unknown',recipient:'9841000000',company_id:'ag',credits:2,detail:'Timeout'}],canManage:true,provider:{ready:true}};
  const html=await render('app/platform-sms-credits.tsx',[true,data,'',false,''],{tenantId:'tenant'});
- assert.match(html,/Add paid SMS credits/);assert.match(html,/Payment reference \/ note/);assert.match(html,/confirmed provider outcome/i);assert.match(html,/I checked the provider records/);assert.match(html,/refund reserved credits/);
+ assert.match(html,/Add SMS credits/);assert.match(html,/Remove available credits/);assert.match(html,/Payment reference \/ note/);assert.match(html,/confirmed provider outcome/i);assert.match(html,/I checked the provider records/);assert.match(html,/refund reserved credits/);
  assert.doesNotMatch(html,/name="balance"/);
 });
 
 test('cron route requires its own strong secret, never falls back to a logged-in staff cookie, and stays inert when disabled',async()=>{
- const adapter=`data:text/javascript;base64,${Buffer.from(`export const state={runs:0};export const NextResponse={json:(body,options)=>new Response(JSON.stringify(body),options)};export const getUnifiedAdmin=()=>({});export const getControlAdmin=()=>({});export const runOverdueReminderWorker=async()=>{state.runs++;return{checked:1}};`).toString('base64')}`;
+ const adapter=`data:text/javascript;base64,${Buffer.from(`export const state={runs:0};export const NextResponse={json:(body,options)=>new Response(JSON.stringify(body),options)};export const getUnifiedAdmin=()=>({});export const getControlAdmin=()=>({});export const loadMessagingRuntime=async()=>{};export const messagingValue=key=>process.env[key];export const runOverdueReminderWorker=async()=>{state.runs++;return{checked:1}};`).toString('base64')}`;
  let compiled=ts.transpileModule(await readFile('app/api/cron/overdue-reminders/route.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;
  compiled=compiled.replace(/from "([^"]+)"/g,(all,name)=>name==='node:crypto'?all:`from "${adapter}"`);
  const {GET}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`),{state}=await import(adapter);

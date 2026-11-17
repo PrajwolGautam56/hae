@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 import { createHash } from "node:crypto";
+import { maintenanceConnection } from "./supabase-maintenance-connection.mjs";
 
 async function loadEnv(file) {
   const values = {};
@@ -25,15 +26,7 @@ const stamp = new Date().toISOString().replaceAll(":", "-").replaceAll(".", "-")
 const output = path.join(root, "backups", `${projectRef}-${stamp}`);
 await fs.mkdir(output, { recursive: true, mode: 0o700 });
 
-const client = new pg.Client({
-  host: `db.${projectRef}.supabase.co`,
-  port: 5432,
-  user: "postgres",
-  password: env.SUPABASE_DB_PASSWORD,
-  database: "postgres",
-  ssl: { rejectUnauthorized: false },
-  connectionTimeoutMillis: 15000,
-});
+const client = new pg.Client(await maintenanceConnection(env, projectRef));
 
 try {
   await client.connect();
