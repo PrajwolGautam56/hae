@@ -25,12 +25,14 @@ async function probe(){
 try{
  await db.connect();
  if(mode==='vault'){
-  if(!env.SMSPASAL_API_KEY)throw new Error('Supply the provided SMS key through the ignored local messaging environment file');
+  const priorConfig=(await db.query('select public.get_messaging_runtime_config() as value')).rows[0].value;
+  const apiKey=env.SMSPASAL_API_KEY||priorConfig.SMSPASAL_API_KEY;
+  if(!apiKey)throw new Error('Supply the provided SMS key through the ignored local messaging environment file');
   await db.query('begin');
   try{
    await db.query("select pg_advisory_xact_lock(hashtextextended('hae-messaging-runtime-setup',0))");
    cronSecret=(await db.query("select decrypted_secret from vault.decrypted_secrets where name='CRON_SECRET'")).rows[0]?.decrypted_secret || randomBytes(32).toString('hex');
-   const values={SMSPASAL_API_KEY:env.SMSPASAL_API_KEY,SMSPASAL_SENDER_ID:env.SMSPASAL_SENDER_ID||'TN_ALERT',SMSPASAL_ROUTE_ID:env.SMSPASAL_ROUTE_ID||'10305',SMSPASAL_CAMPAIGN_ID:env.SMSPASAL_CAMPAIGN_ID||'9835',CRON_SECRET:cronSecret,OVERDUE_REMINDERS_ENABLED:'true'};
+   const values={SMSPASAL_API_KEY:apiKey,SMSPASAL_SENDER_ID:env.SMSPASAL_SENDER_ID||priorConfig.SMSPASAL_SENDER_ID||'TN_ALERT',SMSPASAL_ROUTE_ID:env.SMSPASAL_ROUTE_ID||priorConfig.SMSPASAL_ROUTE_ID||'10305',SMSPASAL_CAMPAIGN_ID:env.SMSPASAL_CAMPAIGN_ID||priorConfig.SMSPASAL_CAMPAIGN_ID||'9835',CRON_SECRET:cronSecret,OVERDUE_REMINDERS_ENABLED:'true'};
    for(const[name,value]of Object.entries(values)){
     const prior=(await db.query('select id from vault.secrets where name=$1',[name])).rows[0];
     if(prior)await db.query('select vault.update_secret($1,$2,$3,$4)',[prior.id,value,name,'HAE private messaging runtime']);
