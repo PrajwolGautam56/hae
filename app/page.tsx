@@ -911,8 +911,8 @@ export default function Home() {
                 </button>
               </section>
 
-              <OverdueReminders key={company?.id} refreshVersion={reportVersion} onOpenParty={id => { setReportPartyId(id); setActive("Reports"); }} onEditParty={["admin","manager","accountant"].includes(currentMember?.role || "") ? setEditingPartyId : undefined} />
-              {["admin","manager","accountant"].includes(currentMember?.role || "")&&<SmsComposer key={`sms-${company?.id}`} refreshVersion={reportVersion}/>}
+              <OverdueReminders key={company?.id} companyId={company?.id || ""} refreshVersion={reportVersion} onOpenParty={id => { setReportPartyId(id); setActive("Reports"); }} onEditParty={["admin","manager","accountant"].includes(currentMember?.role || "") ? setEditingPartyId : undefined} />
+              {["admin","manager","accountant"].includes(currentMember?.role || "")&&<SmsComposer key={`sms-${company?.id}`} companyId={company?.id || ""} refreshVersion={reportVersion}/>}
               <div className="dashboard-grid">
                 <OverviewAnalytics key={fiscalYear?.id} months={monthlyPerformance} fiscalLabel={fiscalYear?.label_bs || "—"} currentKey={overviewBs ? `${overviewBs.year}-${overviewBs.month}` : ""} onOpen={target => { if (visibleNav.includes(target)) setActive(target); else setNotice("This module is not enabled for your company."); }} />
 

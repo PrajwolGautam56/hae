@@ -2,7 +2,7 @@ import test from 'node:test';import assert from 'node:assert/strict';import{read
 const source=ts.transpileModule(await readFile('lib/client-messaging.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;
 const {clientWallet,clientDelivery,clientAvailability,clientMessageError,manualMessage}=await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
 test('client-facing contracts hide vendor identity, private tariffs, purchase cost and provider IDs',()=>{
- const wallet=clientWallet({balance:100,spent:20,held:2,enabled:true,credits_per_segment:3,providerCost:0.5,paid_amount:2000});assert.deepEqual(wallet,{balance:100,spent:20,held:2,enabled:true});
+ const wallet=clientWallet({balance:100,spent:20,held:2,enabled:true,credits_per_segment:3,providerCost:0.5,paid_amount:2000});assert.deepEqual(wallet,{balance:100,spent:20,held:2,enabled:true,chargeConfigured:true,updatedAt:null});
  const delivery=clientDelivery({id:'id',status:'accepted',credits:2,provider_id:'private-shoot-id',detail:'SMS Pasal accepted'});
  assert.doesNotMatch(JSON.stringify(delivery),/SMS Pasal|private-shoot-id|credits_per_segment|provider_id/);
  assert.equal(clientAvailability({ready:false,reason:'Resend API key missing'}).reason,'Messaging is not active yet. Contact your administrator.');

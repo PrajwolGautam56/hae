@@ -17,7 +17,7 @@ async function context() {
   const { company, member } = await getBusinessContext(db);
   await loadMessagingRuntime();
   if (!company.organization_id) throw new Error("This company has no client organization");
-  const { data: wallet, error } = await db.from("sms_credit_wallets").select("balance,held,spent,credited,enabled,credits_per_segment").eq("tenant_id", company.organization_id).maybeSingle();
+  const { data: wallet, error } = await db.from("sms_credit_wallets").select("balance,held,spent,credited,enabled,credits_per_segment,updated_at").eq("tenant_id", company.organization_id).maybeSingle();
   if (error) throw error;
   return { db, company, member, wallet: wallet || { balance: 0, held: 0, spent: 0, credited: 0, enabled: false, credits_per_segment: null } };
 }

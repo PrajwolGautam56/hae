@@ -8,14 +8,15 @@ import {reminderPreview,deliverOverdueReminder} from "../../../lib/overdue-remin
 import {reminderProviderReady} from "../../../lib/overdue-reminder-provider";
 import {smsPhone} from "../../../lib/overdue-reminder-model";
 import {loadMessagingRuntime} from "../../../lib/messaging-runtime";
+import {readSmsWallet} from "../../../lib/sms-credit-state";
 const validId=(value:unknown)=>typeof value==="string"&&/^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(value);
 export const dynamic="force-dynamic";
 async function context(){
   await requireFeature("accounting");const db=getSupabaseAdmin();if(!db)throw new Error("Database configuration missing");
   const {company,member}=await getBusinessContext(db);if(!["admin","manager","accountant"].includes(member.role))throw new Error("Only an administrator, manager or accountant can send messages");
   await loadMessagingRuntime();
-  const result=await db.from("sms_credit_wallets").select("balance,held,spent,enabled,credits_per_segment").eq("tenant_id",company.organization_id).maybeSingle();if(result.error)throw result.error;
-  return {db,company,member,wallet:result.data||{balance:0,held:0,spent:0,enabled:false,credits_per_segment:null}};
+  const wallet=await readSmsWallet(db,company.organization_id);
+  return {db,company,member,wallet};
 }
 export async function GET(){try{const {db,company,wallet}=await context();const parties=await allReportRows(db.from("parties").select("id,name,phone").eq("company_id",company.id).order("name").order("id"));return NextResponse.json({company:{name:company.name},parties,wallet:clientWallet(wallet),service:clientAvailability(reminderProviderReady("sms"))},{headers:{"Cache-Control":"private, no-store"}});}catch(error){return NextResponse.json({error:clientMessageError(error)},{status:400});}}
 export async function POST(request:Request){try{

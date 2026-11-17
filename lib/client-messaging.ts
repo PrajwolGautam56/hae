@@ -1,6 +1,15 @@
 /** Client responses must never disclose wholesale pricing, provider names, IDs or configuration. */
 export function clientWallet(wallet: any) {
-  return { balance: Number(wallet?.balance || 0), held: Number(wallet?.held || 0), spent: Number(wallet?.spent || 0), enabled: Boolean(wallet?.enabled) };
+  return { balance: Number(wallet?.balance || 0), held: Number(wallet?.held || 0), spent: Number(wallet?.spent || 0), enabled: Boolean(wallet?.enabled), chargeConfigured: Number.isSafeInteger(wallet?.credits_per_segment) && wallet.credits_per_segment > 0, updatedAt: wallet?.updated_at || null };
+}
+/** A positive balance alone does not grant send access. Explain every credit gate. */
+export function smsCreditBlockReason(wallet: any, service: any, credits?: number | null) {
+  if (!wallet) return "Checking the latest SMS credits…";
+  if (!wallet.enabled) return "SMS sending is disabled for this client. Ask your administrator to enable it in SMS credits & reminders → Client credit rules & access. Your available credits are safe.";
+  if (!wallet.chargeConfigured || credits === null) return "Your administrator needs to set the message credit charge before SMS can be sent.";
+  if (!service?.ready) return service?.reason || "Messaging is not active yet. Contact your administrator.";
+  if (credits !== undefined && Number(wallet.balance) < credits) return "Insufficient SMS credits. Ask your administrator for a top-up.";
+  return "";
 }
 export function clientDelivery(delivery: any) {
   const details: Record<string,string> = { accepted: "Message accepted for sending; delivery is not yet confirmed.", failed: "Message was not accepted. Reserved SMS credits have been returned.", reserved: "Send confirmation is pending. Do not send again; contact your administrator.", unknown: "Send outcome needs review. Do not resend until your administrator checks it." };

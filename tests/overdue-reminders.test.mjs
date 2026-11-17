@@ -75,5 +75,5 @@ test('paid-credit routes use platform auth; business routes derive tenant/compan
  assert.match(admin,/authorizePlatformAdmin\(request\)/);assert.match(admin,/canManage\(admin\)/);assert.match(admin,/eq\("tenant_id", tenant.id\)/);
  assert.match(client,/getBusinessContext\(db\)/);assert.match(client,/eq\("tenant_id", company.organization_id\)/);assert.match(client,/Only an administrator, manager or accountant/);assert.doesNotMatch(client,/manage_sms_credits|body.tenantId|body.companyId/);
  assert.match(cron,/timingSafeEqual/);assert.match(cron,/expected.length < 32/);assert.match(cron,/OVERDUE_REMINDERS_ENABLED/);assert.match(cron,/loadMessagingRuntime/);
- const widget=await readFile('app/overdue-reminders.tsx','utf8');assert.match(widget,/Insufficient SMS credits/);assert.match(widget,/refreshVersion/);assert.match(widget,/Send acceptance is not proof of delivery/);
+ const widget=await readFile('app/overdue-reminders.tsx','utf8');assert.match(widget,/smsCreditBlockReason/);assert.match(widget,/refreshVersion/);assert.match(widget,/Send acceptance is not proof of delivery/);
 });
