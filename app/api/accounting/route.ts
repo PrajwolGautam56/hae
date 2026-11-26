@@ -66,14 +66,14 @@ async function snapshot(requestedFy?: string, preparedContext?: Awaited<ReturnTy
       .eq("company_id", company.id)
       .gte("entry_date", fiscalYear.start_ad)
       .lte("entry_date", fiscalYear.end_ad),
-    supabase
+    allReportRows(supabase
       .from("products")
       .select(
         "id,sku,name,unit,sale_price,purchase_price,mrp,stock_qty,low_stock_at,item_type",
       )
       .eq("company_id", company.id)
       .eq("active", true)
-      .order("name"),
+      .order("name").order("id")).then(data=>({data,error:null})),
     supabase
       .from("voucher_sequences")
       .select("voucher_type,last_number")

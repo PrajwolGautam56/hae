@@ -21,7 +21,8 @@
     "nepali-date-converter": "^3.4.0",
     "next": "16.2.6",
     "react": "19.2.6",
-    "react-dom": "19.2.6"
+    "react-dom": "19.2.6",
+    "read-excel-file": "9.3.20"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",

@@ -26,6 +26,7 @@ import PartyDetailsEditor from "./party-details-editor";
 import SalesBillRegister from "./sales-bill-register";
 import OverdueReminders from "./overdue-reminders";
 import SmsComposer from "./sms-composer";
+import ProductImportPanel from "./product-import-panel";
 import { matchingParties } from "../lib/party-search";
 import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
@@ -1194,6 +1195,7 @@ export default function Home() {
                   </button>
                 )}
               </div>
+              {(active==="Inventory"||active==="Stock")&&["admin","manager","accountant"].includes(currentMember?.role||"")&&<ProductImportPanel key={`${company?.id}:${active}`} companyId={company?.id||""} companyName={company?.name||"Selected company"} defaultType={active==="Stock"?"resale_good":"raw_material"} onImported={async()=>{invalidateClientCache();if(fiscalYear?.id)await changeFiscalYear(fiscalYear.id);}}/>}
               <article className="card sales-list">
                 <div className="card-title">
                   <div>
