@@ -3,6 +3,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import PlatformSmsCredits from "../platform-sms-credits";
+import CompanyManufacturingControl from "../company-manufacturing-control";
+import{companyManufacturingPolicy}from"../../lib/company-manufacturing";
 
 type Tenant = {
   id: string;
@@ -625,6 +627,7 @@ export default function PlatformAdminPage() {
                       <th>Data workspace</th>
                       <th>Company users</th>
                       <th>Staff login</th>
+                      <th>Manufacturing</th>
                       <th>Status</th>
                       <th />
                     </tr>
@@ -636,6 +639,7 @@ export default function PlatformAdminPage() {
                       );
                       const companyUsers = data.companyUsers.filter((user) => user.company_id === company.app_company_id && user.active);
                       const hasAdmin = companyUsers.some((user) => user.role === "admin");
+                      const manufacturing=companyManufacturingPolicy(data.entitlements,company.tenant_id,tenant?.slug||"",company.id);
                       const setupStep = !company.app_company_id ? 1 : !hasAdmin ? 2 : !company.login_enabled ? 3 : 4;
                       return (
                         <tr key={company.id}>
@@ -657,6 +661,10 @@ export default function PlatformAdminPage() {
                             >
                               {company.login_enabled ? "Enabled" : "Disabled"}
                             </span>
+                          </td>
+                          <td>
+                            <span className={`pc-toggle-read ${manufacturing.enabled ? "on" : ""}`}>{manufacturing.enabled ? "Enabled" : "Disabled"}</span>
+                            <small>{!manufacturing.clientEnabled ? "Client module disabled" : manufacturing.override === null ? "From client subscription" : "Company setting"}</small>
                           </td>
                           <td>
                             {setupStep === 4 ? <Status value="ready" /> : <span className="pc-setup-step">Setup {setupStep}/3</span>}
@@ -817,6 +825,7 @@ export default function PlatformAdminPage() {
           error={error}
           close={() => setModal(null)}
           submit={action}
+          onFeaturesSaved={load}
         />
       )}
     </main>
@@ -830,6 +839,7 @@ function Editor({
   error,
   close,
   submit,
+  onFeaturesSaved,
 }: {
   modal: Exclude<Modal, null>;
   data: Payload;
@@ -837,9 +847,11 @@ function Editor({
   error: string;
   close: () => void;
   submit: (payload: Record<string, unknown>) => Promise<boolean>;
+  onFeaturesSaved: () => void | Promise<void>;
 }) {
   const tenant = modal.tenant;
   const company = modal.company;
+  const manufacturing = company ? companyManufacturingPolicy(data.entitlements, company.tenant_id, tenant?.slug || "", company.id) : null;
   const [logoData,setLogoData]=useState<string|undefined>(undefined);
   const [logoError,setLogoError]=useState("");
   const subscription = data.subscriptions.find(
@@ -1040,6 +1052,9 @@ function Editor({
                     Enable portal workflow
                   </span>
                 </Field>
+                <div className="wide">
+                  <CompanyManufacturingControl companyId={company.id} companyName={company.name} clientEnabled={manufacturing!.clientEnabled} override={manufacturing!.override} canManage={["super_admin", "operator"].includes(data.viewer.role)} onSaved={onFeaturesSaved} />
+                </div>
               </>
             )}
             <Field label="Internal notes" wide>

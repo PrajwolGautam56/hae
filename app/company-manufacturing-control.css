@@ -1,0 +1,64 @@
+.company-manufacturing-control {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  background: #f4f7fd;
+  border: 1px solid #dae3f1;
+  border-radius: 10px;
+  min-width: 0;
+}
+.company-manufacturing-control > strong {
+  font-size: 14px;
+}
+.company-manufacturing-control p,
+.company-manufacturing-control small {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.company-manufacturing-control label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+.company-manufacturing-control select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  font: inherit;
+  font-size: 16px;
+  min-height: 44px;
+  border: 1px solid #cbd7e7;
+  border-radius: 8px;
+  background: #fff;
+  color: #172b46;
+}
+.company-manufacturing-control button {
+  justify-self: start;
+  min-height: 42px;
+  padding: 9px 13px;
+  border: 0;
+  border-radius: 8px;
+  background: #2c63df;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 600;
+}
+.company-manufacturing-control button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.company-manufacturing-control [role="alert"] {
+  color: #b42318;
+}
+.company-manufacturing-control [role="status"] {
+  color: #067647;
+}
+@media (max-width: 650px) {
+  .company-manufacturing-control button {
+    width: 100%;
+  }
+}

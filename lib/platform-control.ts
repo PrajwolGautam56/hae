@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import {companyManufacturingPolicy} from "./company-manufacturing";
 
 export const COMPANY_COOKIE = "hae_company";
 
@@ -11,6 +12,7 @@ export type PlatformCompany = {
   connectionKey: string | null;
   status: "active" | "pending" | "disabled";
   loginEnabled: boolean;
+  manufacturingEnabled?: boolean;
 };
 
 export type TenantCompanies = {
@@ -42,6 +44,7 @@ const fallback: TenantCompanies = {
       connectionKey: "HAE",
       status: "active",
       loginEnabled: true,
+      manufacturingEnabled: true,
     },
     {
       id: "20000000-0000-4000-8000-000000000002",
@@ -52,12 +55,14 @@ const fallback: TenantCompanies = {
       connectionKey: "AG",
       status: "pending",
       loginEnabled: false,
+      manufacturingEnabled: true,
     },
   ],
   subscription: { planName: "Internal", status: "active", companyLimit: 5, userLimit: 50, expiresOn: null },
   entitlements: Object.fromEntries(DEFAULT_ENTITLEMENTS.map((feature) => [feature, true])),
 };
 const registryCache = new Map<string, { expires: number; value: TenantCompanies | null }>();
+export function clearRegistryCache(){registryCache.clear();}
 const rememberRegistry = (slug: string, value: TenantCompanies | null) => {
   registryCache.set(slug, { value, expires: Date.now() + 15_000 });
   return value;
@@ -90,10 +95,10 @@ export function getControlAdmin() {
   return createClient(url, secret, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export async function companiesForHost(rawHost?: string | null): Promise<TenantCompanies | null> {
+export async function companiesForHost(rawHost?: string | null,bypassCache=false): Promise<TenantCompanies | null> {
   const slug = tenantSlugForHost(rawHost);
   const cached = registryCache.get(slug);
-  if (cached && cached.expires > Date.now()) return cached.value;
+  if (!bypassCache&&cached && cached.expires > Date.now()) return cached.value;
   const control = getControlAdmin();
   if (control) {
     const { data: tenant } = await control
@@ -103,15 +108,16 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
       .eq("active", true)
       .maybeSingle();
     if (tenant) {
-      const [initialCompanies, { data: subscription }, { data: entitlementRows }] = await Promise.all([control
+      const [initialCompanies, { data: subscription }, entitlementResult] = await Promise.all([control
         .from("platform_companies")
         .select("id,app_company_id,slug,name,connection_key,status,login_enabled")
         .eq("tenant_id", tenant.id)
         .order("sort_order")
         .order("name"),
         control.from("platform_subscriptions").select("plan_name,status,company_limit,user_limit,expires_on").eq("tenant_id", tenant.id).maybeSingle(),
-        control.from("platform_entitlements").select("feature_key,enabled").eq("tenant_id", tenant.id),
+        control.from("platform_entitlements").select("feature_key,enabled,limits").eq("tenant_id", tenant.id),
       ]);
+      const entitlementRows=entitlementResult.data;
       let companiesResult: { data: Array<Record<string, unknown>> | null; error: { message: string } | null } = initialCompanies;
       if (companiesResult.error && /app_company_id.*(does not exist|schema cache)/i.test(companiesResult.error.message)) {
         companiesResult = await control
@@ -133,6 +139,7 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
           connectionKey: company.connection_key ? String(company.connection_key) : null,
           status: company.status as PlatformCompany["status"],
           loginEnabled: Boolean(company.login_enabled),
+          manufacturingEnabled: !entitlementResult.error&&companyManufacturingPolicy(entitlementRows||[],tenant.id,tenant.slug,String(company.id)).enabled,
         })),
         subscription: subscription ? {
           planName: subscription.plan_name,
@@ -147,7 +154,7 @@ export async function companiesForHost(rawHost?: string | null): Promise<TenantC
       });
     }
   }
-  return rememberRegistry(slug, slug === fallback.tenant.slug ? fallback : null);
+  return rememberRegistry(slug, slug === fallback.tenant.slug ? (control?{...fallback,companies:fallback.companies.map(company=>({...company,manufacturingEnabled:false}))}:fallback) : null);
 }
 
 export async function loginCompany(rawHost: string | null, companySlug: string) {

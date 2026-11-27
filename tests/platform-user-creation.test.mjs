@@ -8,6 +8,7 @@ const compile = async (file) => ts.transpileModule(await fs.readFile(file, "utf8
   compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const passwordModule = url(await compile("lib/temporary-password.ts"));
+const manufacturingModule = url(await compile("lib/company-manufacturing.ts"));
 const { createTemporaryPassword } = await import(passwordModule);
 
 // Isolated in-memory adapters: no Supabase credentials, network calls or emails.
@@ -54,10 +55,11 @@ export const canManageAdmins = () => true;
 export const writePlatformAudit = async () => {};
 export const sendTeamEmail = async (input) => { state.emails.push(input); return { success: true }; };
 export const getUnifiedAdmin = () => db;
+export const clearRegistryCache = () => {};
 `);
 const { state } = await import(adapters);
 let route = await compile("app/api/platform/admin/route.ts");
-route = route.replace(/from "([^"]+)"/g, (_, specifier) => `from "${specifier.endsWith("temporary-password") ? passwordModule : adapters}"`);
+route = route.replace(/from "([^"]+)"/g, (_, specifier) => `from "${specifier.endsWith("temporary-password") ? passwordModule : specifier.endsWith("company-manufacturing") ? manufacturingModule : adapters}"`);
 const { POST } = await import(url(route));
 const request = (action, extra = {}) => new Request("https://admin.example.invalid/api/platform/admin", {
   method: "POST", headers: { "Content-Type": "application/json" },

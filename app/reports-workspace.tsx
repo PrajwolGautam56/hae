@@ -7,6 +7,8 @@ import ReportVoucherReference from "./report-voucher-reference";
 import PartyDueSummary from "./party-due-summary";
 import { formatBs, adToBsParts, bsToAd, bsMonths } from "../lib/nepali-date";
 import { downloadCsv, printDocument } from "../lib/export-data";
+import { stockSources } from "../lib/stock-reports";
+import "./stock-reports.css";
 import {
   getCachedJson,
   peekClientCache,
@@ -94,6 +96,8 @@ export default function ReportsWorkspace({
   const [type, setType] = useState("daybook");
   const [monthOffset, setMonthOffset] = useState(0);
   const [accountId, setAccountId] = useState("");
+  const [stockProductId,setStockProductId]=useState(""),[stockItemType,setStockItemType]=useState(""),[stockSource,setStockSource]=useState(""),[stockActorId,setStockActorId]=useState("");
+  const isStockReport=["stock_statement","stock_movement"].includes(type);
   const [preset, setPreset] = useState<"today" | "fy" | "custom" | "month">(
     initialPartyId ? "fy" : "today",
   );
@@ -146,7 +150,7 @@ export default function ReportsWorkspace({
     if (!fiscalYear?.id) return;
     const timer = setTimeout(run, 80);
     return () => clearTimeout(timer);
-  }, [partyId, type, accountId, from, to, fiscalYear?.id, refreshVersion]);
+  }, [partyId, type, accountId, from, to, fiscalYear?.id, refreshVersion,stockProductId,stockItemType,stockSource,stockActorId]);
   const firstMonth = adToBsParts(fiscalYear.start_ad);
   const monthOptions = Array.from({ length: 12 }, (_, i) => {
     const m = firstMonth.month - 1 + i;
@@ -209,6 +213,7 @@ export default function ReportsWorkspace({
       if (partyId && partyFilterReports.includes(type))
         q.set("partyId", partyId);
       if (accountId && type === "general_ledger") q.set("accountId", accountId);
+      if(isStockReport){if(stockProductId)q.set("productId",stockProductId);if(stockItemType)q.set("itemType",stockItemType);if(type==="stock_movement"){if(stockSource)q.set("source",stockSource);if(stockActorId)q.set("actorId",stockActorId);}}
       const key = `reports:${q}`;
       const cached = peekClientCache<any>(key);
       setData(cached || null);
@@ -321,6 +326,10 @@ export default function ReportsWorkspace({
         { label: "Opening", value: (r: any) => r.opening },
         { label: "Inward", value: (r: any) => r.inward },
         { label: "Outward", value: (r: any) => r.outward },
+        { label: "Purchase received", value: (r: any) => r.purchaseIn },
+        { label: "Production output", value: (r: any) => r.productionIn },
+        { label: "Manual added", value: (r: any) => r.manualIn },
+        { label: "Manual removed", value: (r: any) => r.manualOut },
         { label: "Closing", value: (r: any) => r.closing },
         { label: "Stock value", value: (r: any) => r.stockValue },
       ]);
@@ -329,7 +338,14 @@ export default function ReportsWorkspace({
         { label: "Date (BS)", value: (r: any) => formatBs(r.movement_date) },
         { label: "Reference", value: (r: any) => r.reference },
         { label: "Item", value: (r: any) => r.product?.name },
-        { label: "Movement", value: (r: any) => r.voucherType },
+        { label: "Source", value: (r: any) => r.sourceLabel },
+        { label: "Staff", value: (r: any) => r.actorName },
+        { label: "Recorded at (Nepal)", value: (r: any) => stockRecordedAt(r.recordedAt) },
+        { label: "Opening before entry", value: (r: any) => r.opening },
+        { label: "Added", value: (r: any) => r.inward },
+        { label: "Removed", value: (r: any) => r.outward },
+        { label: "Balance after entry", value: (r: any) => r.balance },
+        { label: "Unit", value: (r: any) => r.product?.unit },
         { label: "Quantity", value: (r: any) => r.quantity },
         { label: "Unit cost", value: (r: any) => r.unitCost },
         { label: "Notes", value: (r: any) => r.notes },
@@ -484,6 +500,11 @@ export default function ReportsWorkspace({
             </select>
           </label>
         )}
+        {isStockReport&&<>
+          <label>Stock item<select value={stockProductId} onChange={event=>setStockProductId(event.target.value)}><option value="">All products</option>{data?.products?.map((product:any)=><option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+          <label>Item category<select value={stockItemType} onChange={event=>setStockItemType(event.target.value)}><option value="">All categories</option><option value="resale_good">Resale products</option><option value="finished_good">Finished goods</option><option value="raw_material">Raw materials</option><option value="packaging">Packaging</option></select></label>
+          {type==="stock_movement"&&<><label>Stock source<select value={stockSource} onChange={event=>setStockSource(event.target.value)}><option value="">All sources</option>{Object.entries(stockSources).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label><label>Staff member<select value={stockActorId} onChange={event=>setStockActorId(event.target.value)}><option value="">All staff</option>{data?.actors?.map((actor:any)=><option key={actor.id} value={actor.id}>{actor.name}</option>)}</select></label></>}
+        </>}
         <label>
           Period
           <select
@@ -1162,13 +1183,12 @@ function StockStatementTable({
   loading: boolean;
 }) {
   return (
-    <article className="card report-table">
+    <article className="card report-table stock-audit-report">
       <div className="card-title">
         <div>
           <h3>Stock statement</h3>
           <p>
-            Opening, inward, outward and closing quantity. Value is an estimate
-            at the current recorded unit cost, not a historical valuation.
+            {data?.basis||"Opening, additions, removals and closing stock for the selected period."}
           </p>
         </div>
       </div>
@@ -1182,6 +1202,10 @@ function StockStatementTable({
               <th>OPENING</th>
               <th>INWARD</th>
               <th>OUTWARD</th>
+              <th>PURCHASE IN</th>
+              <th>PRODUCED</th>
+              <th>MANUAL ADDED</th>
+              <th>MANUAL REMOVED</th>
               <th>CLOSING</th>
               <th>VALUE</th>
             </tr>
@@ -1199,32 +1223,33 @@ function StockStatementTable({
                   <td>{row.opening}</td>
                   <td className="credit">{row.inward || "—"}</td>
                   <td className="debit">{row.outward || "—"}</td>
+                  <td>{row.purchaseIn||"—"}</td>
+                  <td>{row.productionIn||"—"}</td>
+                  <td>{row.manualIn||"—"}</td>
+                  <td>{row.manualOut||"—"}</td>
                   <td>
                     <strong>{row.closing}</strong>
                   </td>
-                  <td>{money(row.stockValue)}</td>
+                  <td>{row.stockValue<0?"−":""}{money(row.stockValue)}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td className="empty-year" colSpan={8}>
+                <td className="empty-year" colSpan={12}>
                   {loading ? "Calculating stock…" : "No inventory items."}
                 </td>
               </tr>
             )}
           </tbody>
-          {data?.totals && (
+          {data?.unitTotals && (
             <tfoot>
+              {data.unitTotals.map((total:any)=><tr key={total.unit}><td colSpan={3}>Quantity total · {total.unit}</td><td>{total.opening}</td><td>{total.inward}</td><td>{total.outward}</td><td colSpan={4}>Different units are not added together</td><td>{total.closing}</td><td>—</td></tr>)}
               <tr>
-                <td colSpan={3}>
-                  <strong>Total</strong>
+                <td colSpan={11}>
+                  <strong>Estimated closing value</strong>
                 </td>
-                <td>{data.totals.opening}</td>
-                <td>{data.totals.inward}</td>
-                <td>{data.totals.outward}</td>
-                <td>{data.totals.closing}</td>
                 <td>
-                  <strong>{money(data.totals.stockValue)}</strong>
+                  <strong>{data.totals.stockValue<0?"−":""}{money(data.totals.stockValue)}</strong>
                 </td>
               </tr>
             </tfoot>
@@ -1235,6 +1260,7 @@ function StockStatementTable({
   );
 }
 
+function stockRecordedAt(value:string){if(!value)return "Not recorded";const date=new Date(value);if(Number.isNaN(date.getTime()))return "Not recorded";return `${formatBs(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kathmandu",year:"numeric",month:"2-digit",day:"2-digit"}).format(date))} · ${new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kathmandu",hour:"2-digit",minute:"2-digit",hour12:false}).format(date)}`;}
 function StockMovementTable({
   data,
   loading,
@@ -1245,11 +1271,12 @@ function StockMovementTable({
   onOpenVoucher?: (id: string) => void;
 }) {
   return (
-    <article className="card report-table">
+    <article className="card report-table stock-audit-report">
       <div className="card-title">
         <div>
           <h3>Stock movement</h3>
-          <p>Voucher-wise item audit trail</p>
+          <p>Every dated change, source and recorded staff member. {data?.filteredMovements?"Filtered entries shown; running balances include all sources and staff.":""}</p>
+          <p>{data?.basis}</p>
         </div>
       </div>
       <div className="table-wrap">
@@ -1260,7 +1287,12 @@ function StockMovementTable({
               <th>REFERENCE</th>
               <th>ITEM</th>
               <th>SOURCE</th>
-              <th>QUANTITY</th>
+              <th>STAFF</th>
+              <th>RECORDED (NEPAL)</th>
+              <th>BEFORE</th>
+              <th>ADDED</th>
+              <th>REMOVED</th>
+              <th>BALANCE</th>
               <th>UNIT COST</th>
               <th>NOTES</th>
             </tr>
@@ -1274,18 +1306,20 @@ function StockMovementTable({
                     <ReportVoucherReference voucherId={row.voucher_id} reference={row.reference} label={typeLabel[row.voucherType] || row.voucherType} onOpen={onOpenVoucher}/>
                   </td>
                   <td>{row.product?.name || "—"}</td>
-                  <td>{typeLabel[row.voucherType] || row.voucherType}</td>
-                  <td className={row.quantity >= 0 ? "credit" : "debit"}>
-                    {row.quantity >= 0 ? "+" : ""}
-                    {row.quantity} {row.product?.unit}
-                  </td>
+                  <td>{row.sourceLabel}</td>
+                  <td>{row.actorName}</td>
+                  <td>{stockRecordedAt(row.recordedAt)}</td>
+                  <td>{row.opening} {row.product?.unit}</td>
+                  <td className="credit">{row.inward||"—"}</td>
+                  <td className="debit">{row.outward||"—"}</td>
+                  <td><strong>{row.balance} {row.product?.unit}</strong></td>
                   <td>{money(row.unitCost)}</td>
                   <td>{row.notes || "—"}</td>
                 </tr>
               ))
             ) : (
               <tr>
-                <td className="empty-year" colSpan={7}>
+                <td className="empty-year" colSpan={12}>
                   {loading
                     ? "Loading stock movements…"
                     : "No stock movement in this period."}

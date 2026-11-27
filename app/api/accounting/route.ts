@@ -282,22 +282,21 @@ export async function POST(request: Request) {
           { error: "Product name is required" },
           { status: 400 },
         );
-      const { error } = await supabase.from("products").upsert(
-        {
-          company_id: initialState.company.id,
+      const { error } = await supabase.rpc("create_catalog_product", {
+        p_company_id:initialState.company.id,p_fiscal_year_id:initialState.fiscalYear.id,p_actor_id:currentMember.id,p_date:String(body.date||businessDate()),
+        p_product: {
           name,
           sku: String(body.sku || ""),
           unit: String(body.unit || "pcs"),
-          sale_price: Number(body.salePrice || 0),
-          purchase_price: Number(body.purchasePrice || 0),
+          salePrice: Number(body.salePrice || 0),
+          purchasePrice: Number(body.purchasePrice || 0),
           mrp: Number(body.mrp || 0),
-          stock_qty: Number(body.openingStock || 0),
-          low_stock_at: Number(body.lowStockAt || 0),
-          item_type: String(body.productType || "finished_good"),
+          openingStock: Number(body.openingStock || 0),
+          lowStockAt: Number(body.lowStockAt || 0),
+          itemType: String(body.productType || "finished_good"),
         },
-        { onConflict: "company_id,name" },
-      );
-      if (error) throw error;
+      });
+      if (error) throw new Error(error.code==="23505"?"This product already exists. Use Edit for details or Manual stock to change its quantity; existing stock was not overwritten.":error.message);
       return NextResponse.json(await accountingMutationResponse(request.headers.get("prefer"), initialState.fiscalYear.id, () => snapshot(initialState.fiscalYear.id, initialState, currentMember)), {
         status: 201,
       });

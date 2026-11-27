@@ -3,6 +3,8 @@ import { authorizePlatformAdmin, canManage, canManageAdmins, writePlatformAudit 
 import { sendTeamEmail } from "../../../../lib/resend-email";
 import { getUnifiedAdmin } from "../../../../lib/supabase-server";
 import { createTemporaryPassword } from "../../../../lib/temporary-password";
+import {companyManufacturingPolicy,changedManufacturingLimits} from "../../../../lib/company-manufacturing";
+import {clearRegistryCache} from "../../../../lib/platform-control";
 
 export const dynamic = "force-dynamic";
 
@@ -183,6 +185,26 @@ export async function POST(request: Request) {
     const body = await request.json();
     const action = String(body.action || "");
     if (!canManage(admin) && !["noop"].includes(action)) return NextResponse.json({ error: "Your platform role is read-only" }, { status: 403 });
+
+    if(action==="setCompanyManufacturing"){
+      const origin=request.headers.get("origin");if(origin&&new URL(origin).origin!==new URL(request.url).origin)return NextResponse.json({error:"Cross-origin module change denied"},{status:403});
+      const companyId=String(body.companyId||"");
+      if(!/^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(companyId)||(body.enabled!==null&&typeof body.enabled!=="boolean"))return NextResponse.json({error:"Select a company and a valid manufacturing setting"},{status:400});
+      const company=await db.from("platform_companies").select("id,tenant_id,name").eq("id",companyId).single();if(company.error)throw company.error;
+      const[tenant,features]=await Promise.all([db.from("platform_tenants").select("slug").eq("id",company.data.tenant_id).single(),db.from("platform_entitlements").select("feature_key,enabled,limits,updated_at").eq("tenant_id",company.data.tenant_id)]);
+      if(tenant.error||features.error)throw tenant.error||features.error;
+      const policy=companyManufacturingPolicy(features.data||[],company.data.tenant_id,tenant.data.slug,companyId);
+      if(body.enabled===true&&!policy.clientEnabled)return NextResponse.json({error:"Manufacturing is disabled in this client's subscription. Enable the client module first."},{status:409});
+      if(policy.override===body.enabled)return NextResponse.json({success:true,notice:"Company manufacturing setting is already saved."});
+      if(body.expectedOverride!==policy.override)return NextResponse.json({error:"Company manufacturing access changed. Refresh and review the latest setting."},{status:409});
+      const prior=features.data?.find(item=>item.feature_key==="manufacturing"),limits=changedManufacturingLimits(prior?.limits,companyId,body.enabled),now=new Date().toISOString();
+      await writePlatformAudit(db,admin,request,{action:"company_manufacturing_requested",entityType:"company",entityId:companyId,summary:`Requested manufacturing ${body.enabled===null?"inherit subscription":body.enabled?"enabled":"disabled"} for ${company.data.name}`,metadata:{tenantId:company.data.tenant_id,previous:policy.override,requested:body.enabled}});
+      const saved=prior?await db.from("platform_entitlements").update({limits,updated_at:now}).eq("tenant_id",company.data.tenant_id).eq("feature_key","manufacturing").eq("updated_at",prior.updated_at).select("tenant_id").maybeSingle():await db.from("platform_entitlements").insert({tenant_id:company.data.tenant_id,feature_key:"manufacturing",enabled:policy.clientEnabled,limits,updated_at:now}).select("tenant_id").single();
+      if(saved.error)throw saved.error;if(!saved.data)return NextResponse.json({error:"Another module update completed first. Refresh before saving again."},{status:409});
+      clearRegistryCache();
+      let warning="";try{await writePlatformAudit(db,admin,request,{action:"company_manufacturing",entityType:"company",entityId:companyId,summary:`Manufacturing ${body.enabled===null?"inherits subscription":body.enabled?"enabled":"disabled"} for ${company.data.name}`,metadata:{tenantId:company.data.tenant_id,previous:policy.override,enabled:body.enabled}});}catch{warning="Setting saved; the requested-change audit is recorded, but completion logging needs review.";}
+      return NextResponse.json({success:true,notice:warning||"Manufacturing access saved for this company only. Menus sync within 30 seconds or on refresh; server access is checked immediately."});
+    }
 
     if (action === "createTenant") {
       const name = String(body.name || "").trim();

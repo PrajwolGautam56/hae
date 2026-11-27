@@ -29,6 +29,7 @@ import SmsComposer from "./sms-composer";
 import ProductImportPanel from "./product-import-panel";
 import ProductCombobox from "./product-combobox";
 import ManualStockPanel from "./manual-stock-panel";
+import {salesStockDeficits} from "../lib/stock-reports";
 import { matchingParties } from "../lib/party-search";
 import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
@@ -120,7 +121,7 @@ export default function Home() {
   const [voucherPrint, setVoucherPrint] = useState<string | null>(null);
   const voucherDocument = useRef<HTMLDivElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [entitlements, setEntitlements] = useState<Record<string, boolean>>({});
+  const [entitlements, setEntitlements] = useState<Record<string, boolean>>({manufacturing:false});
   const [clientToday, setClientToday] = useState("");
   const [active, setActive] = useState("Overview");
   const [modal, setModal] = useState<
@@ -265,8 +266,31 @@ export default function Home() {
 
   useEffect(() => {
     setClientToday(localBusinessDate());
-    void fetch("/api/platform/companies", { cache: "no-store" }).then((response) => response.json()).then((body) => setEntitlements(body.entitlements || {})).catch(() => {});
   }, []);
+  useEffect(() => {
+    let stopped=false;
+    let controller:AbortController|null=null;
+    async function refreshModules(){
+      if(document.visibilityState==="hidden")return;
+      controller?.abort();
+      const current=new AbortController();controller=current;
+      try{
+        const response=await fetch("/api/platform/companies",{cache:"no-store",signal:current.signal});
+        if(!response.ok)throw new Error("Module access unavailable");
+        const body=await response.json();
+        if(!stopped&&!current.signal.aborted)setEntitlements({...body.entitlements,manufacturing:body.entitlements?.manufacturing===true});
+      }catch{
+        // Keep the last confirmed menu state on a network interruption so a
+        // production draft is not discarded. Mutations recheck access server-side.
+      }
+    }
+    void refreshModules();
+    const timer=window.setInterval(()=>void refreshModules(),15_000);
+    const refresh=()=>void refreshModules();
+    window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);
+    return()=>{stopped=true;controller?.abort();window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh);};
+  }, []);
+  useEffect(()=>{if(entitlements.manufacturing===false&&active==="Manufacturing")setActive("Overview");},[entitlements.manufacturing,active]);
   async function refreshChequeCounts() {
     try {
       const data = await getCachedJson<any>("cheques:snapshot", "/api/cheques", { maxAgeMs: 30_000 });
@@ -354,6 +378,7 @@ export default function Home() {
 
   async function save(kind: string) {
     if (saveLock.current) return;
+    if (modal === "production" && entitlements.manufacturing !== true) { setNotice("Manufacturing is disabled for this company. Your entry has not been saved; contact your platform administrator."); return; }
     if (snapshotSync !== "idle") { setNotice("Your last entry is saved. Refresh the latest totals before saving another entry."); return; }
     if (modal === "sale" && cancelledSale && editingVoucherId && !window.confirm("Cancel this posted sales bill? Its original details remain in the audit log, while sales, party balance and stock effects are reversed. Separate payment receipts are not cancelled; check the party ledger afterwards. This cannot be undone.")) return;
     saveLock.current = true; setSaving(true);
@@ -726,6 +751,7 @@ export default function Home() {
     (s, l) => s + (Number(l.quantity) || 0) * (Number(l.rate) || 0),
     0,
   );
+  const stockDeficits=modal==="sale"&&!editingVoucherId&&!cancelledSale?salesStockDeficits(products,saleLines):[];
   const saleDiscount = (saleSubtotal * Math.max(0, discountPercent)) / 100;
   const saleTax =
     ((saleSubtotal - saleDiscount) * Math.max(0, taxPercent)) / 100;
@@ -1560,6 +1586,7 @@ export default function Home() {
               {modal === "purchase" && <label>Supplier's bill number<input value={supplierBillNo} onChange={event=>setSupplierBillNo(event.target.value)} placeholder="Number printed on supplier bill"/></label>}
               {modal === "sale" && cancelledSale ? <div className="cancelled-sale-explanation full"><strong>This invoice number will be cancelled.</strong><p>No customer charge, VAT, stock movement or ledger balance will be posted. The number remains visible in the sales register.</p><label>Reason / note (optional)<input value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} placeholder="e.g. Bill prepared by mistake" /></label></div> : modal === "sale" || modal === "purchase" ? (
                 <div className="invoice-builder full">
+                  {stockDeficits.length>0&&<div className="snapshot-sync" role="status"><span>Stock shortage does not block this sale. After saving: {stockDeficits.map(item=>`${item.name}: ${item.after} ${item.unit}`).join("; ")}. Reconcile later with a purchase or an audited manual stock addition.</span></div>}
                   <div className="line-head">
                     <span>PRODUCT / DESCRIPTION</span>
                     <span>QTY</span>
@@ -1904,6 +1931,7 @@ export default function Home() {
                       disabled={Boolean(editingProductId)}
                     />
                   </label>
+                  {!editingProductId&&Number(openingStock)>0&&<label>Opening stock date (BS)<BsDateInput min={fiscalYear?.start_ad} max={fiscalYear?.end_ad} value={transactionDate} onChange={setTransactionDate}/><small>Recorded as an audited manual stock addition by the signed-in staff member.</small></label>}
                   {editingProductId&&fiscalYear&&["admin","manager","accountant"].includes(currentMember?.role||"")&&<details className="full"><summary>Change stock manually · with an audit record</summary><ManualStockPanel key={`${editingProductId}:${fiscalYear.id}`} companyId={company?.id||""} productId={editingProductId} fiscalYear={fiscalYear} onSaved={stockAdjusted}/></details>}
                 </>
               )}

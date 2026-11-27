@@ -6,6 +6,7 @@ import { requireFeature } from "../../../lib/feature-access";
 import { financialReport } from "../../../lib/financial-reports";
 import { connectedReport } from "../../../lib/connected-reports";
 import { allReportRows } from "../../../lib/report-query";
+import { stockReport } from "../../../lib/stock-reports";
 
 export const dynamic = "force-dynamic";
 
@@ -43,37 +44,11 @@ export async function GET(request: Request) {
     }
 
     if (reportType === "stock_statement" || reportType === "stock_movement") {
-      const [productsResult, periodResult, futureResult] = await Promise.all([
-        allReportRows(db.from("products").select("id,sku,name,unit,item_type,stock_qty,purchase_price,sale_price").eq("company_id", company.id).order("name").order("id")).then(data=>({data,error:null})),
-        allReportRows(db.from("stock_movements").select("id,voucher_id,product_id,movement_date,quantity,movement_type,unit_cost,notes,vouchers!stock_company_voucher_fkey(voucher_no,voucher_type)")
-          .eq("company_id", company.id).gte("movement_date", dateFrom).lte("movement_date", dateTo).order("movement_date").order("created_at").order("id")).then(data=>({data,error:null})),
-        allReportRows(db.from("stock_movements").select("product_id,quantity").eq("company_id", company.id).gt("movement_date", dateTo).order("id")).then(data=>({data,error:null})),
-      ]);
-      if (productsResult.error || periodResult.error || futureResult.error) throw productsResult.error || periodResult.error || futureResult.error;
-      const future = new Map<string, number>();
-      for (const move of futureResult.data || []) future.set(move.product_id, (future.get(move.product_id) || 0) + Number(move.quantity));
-      const period = new Map<string, { inward: number; outward: number; net: number }>();
-      for (const move of periodResult.data || []) {
-        const quantity = Number(move.quantity); const value = period.get(move.product_id) || { inward: 0, outward: 0, net: 0 };
-        if (quantity >= 0) value.inward += quantity; else value.outward += Math.abs(quantity); value.net += quantity; period.set(move.product_id, value);
-      }
-      if (reportType === "stock_movement") {
-        const productMap = new Map((productsResult.data || []).map((product) => [product.id, product]));
-        const rows = (periodResult.data || []).map((move) => ({ ...move, product: productMap.get(move.product_id), quantity: Number(move.quantity), unitCost: Number(move.unit_cost || 0), reference: (move.vouchers as any)?.voucher_no || "—", voucherType: (move.vouchers as any)?.voucher_type || move.movement_type }));
-        return NextResponse.json({ company, fiscalYear: fy, from: dateFrom, to: dateTo, reportType, rows });
-      }
-      const rows = (productsResult.data || []).map((product) => {
-        const activity = period.get(product.id) || { inward: 0, outward: 0, net: 0 };
-        const closing = Number(product.stock_qty) - (future.get(product.id) || 0);
-        const opening = closing - activity.net;
-        return { ...product, opening, inward: activity.inward, outward: activity.outward, closing, stockValue: closing * Number(product.purchase_price) };
-      });
-      const totals = rows.reduce((sum, row) => ({ opening: sum.opening + row.opening, inward: sum.inward + row.inward,
-        outward: sum.outward + row.outward, closing: sum.closing + row.closing, stockValue: sum.stockValue + row.stockValue }),
-      { opening: 0, inward: 0, outward: 0, closing: 0, stockValue: 0 });
-      return NextResponse.json({ company, fiscalYear: fy, from: dateFrom, to: dateTo, reportType, rows, totals });
+      const {data,error}=await db.rpc("stock_report_snapshot",{p_company_id:company.id,p_from:dateFrom,p_to:dateTo});
+      if(error)throw new Error(/stock_report_snapshot/.test(error.message)?"Stock reports need database migration 202611270001 before they can load.":error.message);
+      const report=stockReport(data,reportType,{productId:q.get("productId")||"",itemType:q.get("itemType")||"",source:reportType==="stock_movement"?q.get("source")||"":"",actorId:reportType==="stock_movement"?q.get("actorId")||"":""});
+      return NextResponse.json({company,fiscalYear:fy,from:dateFrom,to:dateTo,...report},{headers:{"Cache-Control":"private, no-store"}});
     }
-
     if (reportType === "tax_summary") {
       const report:any=await connectedReport(db,company,fy,"monthly_accounting",dateFrom,dateTo,partyId);
       return NextResponse.json({...report,reportType,rows:report.rows.map((r:any)=>({...r,label:`${r.side} · ${r.label}${r.isReturn?" · Return":""}`})),
