@@ -27,6 +27,8 @@ import SalesBillRegister from "./sales-bill-register";
 import OverdueReminders from "./overdue-reminders";
 import SmsComposer from "./sms-composer";
 import ProductImportPanel from "./product-import-panel";
+import ProductCombobox from "./product-combobox";
+import ManualStockPanel from "./manual-stock-panel";
 import { matchingParties } from "../lib/party-search";
 import { clearInvoiceDraft, invoiceDraftKey, loadInvoiceDraft, saveInvoiceDraft, type InvoiceDraft } from "../lib/invoice-draft";
 
@@ -217,6 +219,7 @@ export default function Home() {
   const [editingVoucherId, setEditingVoucherId] = useState("");
   const [editingVoucherNumber, setEditingVoucherNumber] = useState("");
   const [editingProductId, setEditingProductId] = useState("");
+  const [manualStockProductId,setManualStockProductId]=useState("");
   const [productType, setProductType] = useState("finished_good");
   const [outputProductId, setOutputProductId] = useState("");
   const [outputQuantity, setOutputQuantity] = useState("");
@@ -316,6 +319,7 @@ export default function Home() {
     setFiscalYears(data.fiscalYears || []);
     setFiscalYear(data.fiscalYear || null);
     setProducts(data.products || []);
+    if(data.company?.id!==company?.id)setManualStockProductId("");
     setCompany(data.company || { name: "Company workspace" });
     try { sessionStorage.setItem(`hae-snapshot-${data.fiscalYear?.id || "current"}`, JSON.stringify(data)); sessionStorage.setItem("hae-snapshot-current", JSON.stringify(data)); } catch {}
   }
@@ -652,6 +656,8 @@ export default function Home() {
         ? {
             productId: id,
             name: product.name,
+            unit: product.unit,
+            itemType: product.item_type,
             rate: Number(
               modal === "purchase"
                 ? product.purchase_price
@@ -661,6 +667,7 @@ export default function Home() {
         : { productId: "", name: "", rate: "" },
     );
   }
+  function stockAdjusted(id:string,stock:number){setProducts(current=>current.map(product=>product.id===id?{...product,stock_qty:stock}:product));if(editingProductId===id)setOpeningStock(String(stock));clearReportCache();invalidateClientCache();setReportVersion(version=>version+1);}
   function wheelNumberInput(event: any) {
     event.preventDefault();
     event.currentTarget.blur();
@@ -1196,6 +1203,7 @@ export default function Home() {
                 )}
               </div>
               {(active==="Inventory"||active==="Stock")&&["admin","manager","accountant"].includes(currentMember?.role||"")&&<ProductImportPanel key={`${company?.id}:${active}`} companyId={company?.id||""} companyName={company?.name||"Selected company"} defaultType={active==="Stock"?"resale_good":"raw_material"} onImported={async()=>{invalidateClientCache();if(fiscalYear?.id)await changeFiscalYear(fiscalYear.id);}}/>}
+              {(active==="Inventory"||active==="Stock")&&manualStockProductId&&fiscalYear&&<div id="manual-stock-editor"><button className="primary soft" onClick={()=>setManualStockProductId("")}>Close stock adjustment</button><ManualStockPanel key={`${company?.id}:${manualStockProductId}:${fiscalYear.id}`} companyId={company?.id||""} productId={manualStockProductId} fiscalYear={fiscalYear} onSaved={stockAdjusted}/></div>}
               <article className="card sales-list">
                 <div className="card-title">
                   <div>
@@ -1234,7 +1242,7 @@ export default function Home() {
                             <td>
                               <strong>{p.stock_qty}</strong>
                             </td>
-                            <td><button className="table-action" onClick={() => editProduct(p)}>Edit</button></td>
+                              <td><button className="table-action" onClick={() => editProduct(p)}>Edit</button>{["admin","manager","accountant"].includes(currentMember?.role||"")&&<button className="table-action" onClick={()=>{setManualStockProductId(p.id);requestAnimationFrame(()=>document.getElementById("manual-stock-editor")?.scrollIntoView({behavior:"smooth",block:"start"}));}}>Manual stock</button>}</td>
                           </tr>
                         ))}
                         {!registerProducts.length && <tr><td colSpan={9} className="empty-year">{active === "Inventory" ? "No raw material or packaging yet. Add directly or receive through a purchase bill." : "No sellable stock yet. Purchase a resale item or produce finished goods."}</td></tr>}
@@ -1563,20 +1571,9 @@ export default function Home() {
                     <div className="invoice-line" key={index}>
                       <div>
                         <span className="invoice-item-number">Item {index + 1}</span>
-                        <select
-                          aria-label={`Product ${index + 1}`}
-                          value={line.productId}
-                          onChange={(e) => chooseProduct(index, e.target.value)}
-                        >
-                          <option value="">Custom / non-inventory item</option>
-                          {products.filter((p)=>modal === "sale" ? ["finished_good","resale_good"].includes(p.item_type) : true).map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} · Stock {p.stock_qty}
-                            </option>
-                          ))}
-                        </select>
+                        <ProductCombobox label={`Item name ${index+1}`} inputRef={element => { lineNameInputs.current[index] = element; }} products={products.filter(p=>modal==="sale"?["finished_good","resale_good"].includes(p.item_type):true)} value={line.name} selectedId={line.productId} onInput={name=>updateSaleLine(index,{name,productId:""})} onSelect={product=>chooseProduct(index,product.id)}/>
                         {!line.productId && (
-                          <><input ref={element => { lineNameInputs.current[index] = element; }} aria-label={`Item name ${index + 1}`} value={line.name} onChange={(e) => updateSaleLine(index, { name: e.target.value })} placeholder="Type item name" />{modal === "purchase" && <div className="purchase-item-meta"><input list="product-unit-options" aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})} placeholder="Type unit"/><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
+                          <>{modal === "purchase" && <div className="purchase-item-meta"><input list="product-unit-options" aria-label={`Unit ${index + 1}`} value={line.unit} onChange={(e) => updateSaleLine(index,{unit:e.target.value})} placeholder="Type unit"/><select aria-label={`Stock type ${index + 1}`} value={line.itemType} onChange={(e) => updateSaleLine(index,{itemType:e.target.value})}><option value="raw_material">Raw material</option><option value="packaging">Packaging</option><option value="finished_good">Finished product</option><option value="resale_good">Resale product</option></select></div>}</>
                         )}
                       </div>
                       <input
@@ -1907,6 +1904,7 @@ export default function Home() {
                       disabled={Boolean(editingProductId)}
                     />
                   </label>
+                  {editingProductId&&fiscalYear&&["admin","manager","accountant"].includes(currentMember?.role||"")&&<details className="full"><summary>Change stock manually · with an audit record</summary><ManualStockPanel key={`${editingProductId}:${fiscalYear.id}`} companyId={company?.id||""} productId={editingProductId} fiscalYear={fiscalYear} onSaved={stockAdjusted}/></details>}
                 </>
               )}
             </div>

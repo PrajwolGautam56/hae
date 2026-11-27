@@ -36,6 +36,7 @@
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "pg": "8.23.1",
     "prettier": "^3.9.6",
     "react-server-dom-webpack": "19.2.6",
     "supabase": "^2.109.1",

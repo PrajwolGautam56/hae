@@ -24,6 +24,12 @@ Imports create only new item-master records: quantity, purchase price, sale pric
 
 The preview skips repeated names and existing company names, including inactive items. Existing stock, rates and classifications are never updated by an import. A single batch insert uses `ON CONFLICT DO NOTHING`, so retrying the same workbook after a lost response cannot duplicate identical names. Invalid rows block the whole import. Limits: 1,000 names, a 2 MB upload and a 16 MB expanded workbook. The server derives the authorized company from the session and rejects a changed company or preview before writing. No schema migration is required.
 
+## Manual stock and invoice selection
+
+- Stock / Inventory → **Manual stock**, or product **Edit → Change stock manually**, supports adding quantity, removing quantity or setting an actual counted total. Date (BS) and a reason are required. These are stock journals, not purchases or supplier-payable entries.
+- Migration `202611260001_manual_stock_adjustments.sql` adds private request/audit storage and a service-only wrapper around the existing stock-journal engine. It records actor, reason, source, before/after, delta and voucher reference; uses existing product book cost; guards stale stock/cost and closed fiscal years; and prevents repeat requests from applying twice. Zero book cost is explicitly disclosed as quantity-only, without inventing a financial value. Pending requests survive navigation within the tab and can be checked using the same request ID.
+- Invoice item names are searchable comboboxes (name, words or SKU, including zero-stock products). Select a suggestion or use Arrow keys / Enter to link the actual product and its stock. Custom item text remains possible but is explicitly labelled non-inventory. Sales show only the selected company's sellable products; purchase invoices can select all item types.
+
 ## References used
 
 - LedgerSMB source: goods/parts, assemblies, inventory accounts, warehouse inventory, vendor invoice posting, last cost and sell price. The local GPLv2 source was used as an architectural reference only; no LedgerSMB code was copied.
