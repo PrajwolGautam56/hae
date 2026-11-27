@@ -8,4 +8,5 @@ test('actual product combobox renders zero-stock matches with source hints and a
 });
 test('manual adjustment is reachable from register and product edit without silently rewriting stock',async()=>{
  const page=await readFile('app/page.tsx','utf8'),panel=await readFile('app/manual-stock-panel.tsx','utf8');assert.match(page,/>Manual stock<\/button>/);assert.match(page,/Change stock manually · with an audit record/);assert.match(page,/disabled=\{Boolean\(editingProductId\)\}/);assert.match(panel,/Set counted total/);assert.match(panel,/Check save status/);assert.match(panel,/stockBefore/);assert.match(panel,/sessionStorage.setItem/);assert.match(panel,/readStockRequest/);assert.match(panel,/refreshCommittedStock/);assert.match(panel,/not a purchase/);
+ assert.match(panel,/if\(!body.result.duplicate\)onSaved/);assert.match(page,/value=\{editingProductId\?products.find/);
 });

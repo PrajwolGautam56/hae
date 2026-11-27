@@ -667,7 +667,7 @@ export default function Home() {
         : { productId: "", name: "", rate: "" },
     );
   }
-  function stockAdjusted(id:string,stock:number){setProducts(current=>current.map(product=>product.id===id?{...product,stock_qty:stock}:product));if(editingProductId===id)setOpeningStock(String(stock));clearReportCache();invalidateClientCache();setReportVersion(version=>version+1);}
+  function stockAdjusted(id:string,stock:number){setProducts(current=>current.map(product=>product.id===id?{...product,stock_qty:stock}:product));clearReportCache();invalidateClientCache();setReportVersion(version=>version+1);}
   function wheelNumberInput(event: any) {
     event.preventDefault();
     event.currentTarget.blur();
@@ -1899,7 +1899,7 @@ export default function Home() {
                     {editingProductId ? "Current stock (managed by transactions)" : "Opening stock"}
                     <input
                       type="number"
-                      value={openingStock}
+                      value={editingProductId?products.find(product=>product.id===editingProductId)?.stock_qty??openingStock:openingStock}
                       onChange={(e) => setOpeningStock(e.target.value)}
                       disabled={Boolean(editingProductId)}
                     />
